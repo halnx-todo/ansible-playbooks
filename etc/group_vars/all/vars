@@ -1,0 +1,4 @@
+base_dir: "/opt/data"
+app_dir: "{{ base_dir }}/apps"
+data_dir: "{{ base_dir }}"
+src_dir: "{{ base_dir }}/src"

@@ -1,0 +1,15 @@
+{{ app_dir }}/nginx/logs/*.log
+{{ data_dir }}/nginx/logs/*.log 
+{
+  daily
+  missingok
+  rotate 52
+  compress
+  delaycompress
+  notifempty
+  create 0640 {{ deploy_user }} {{ deploy_group }}
+  sharedscripts
+  postrotate
+    [ ! -f /var/run/nginx.pid ] || kill -USR1 `cat /var/run/nginx.pid`
+  endscript
+}

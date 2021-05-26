@@ -1,0 +1,8 @@
+git_repos:
+- { 'name': 'website', 'repo': 'https://github.com/usawa/website.git', 'version': '{{ release }}', 'branch': 'master'}
+
+build_name: "{{ component }}-{{ application }}:{{ release }}"
+build_strategy: opsteam
+build_args:
+  arg1: value1
+  arg2: value2

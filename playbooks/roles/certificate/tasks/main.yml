@@ -1,0 +1,102 @@
+# vim:ft=ansible:
+---
+- name: "Set SUBJECT"
+  set_fact: SUBJECT="{%if E !='' %}/emailAddress={{ E }}{% endif %}{% if C !='' %}/C={{ C }}{% endif %}{% if ST !='' %}/ST={{ ST }}{% endif %}{% if L !='' %}/L={{ L }}{% endif %}{% if O !='' %}/O={{ O }}{% endif %}{% if OU !='' %}/OU={{ OU }}{% endif %}/CN="
+  delegate_to: localhost
+  run_once: yes
+
+- name: "set domain_name to create a STAR certificate"
+  set_fact: domain_name="{% if domain[0] == "." %}*{% endif %}{{ domain }}"
+  delegate_to: localhost
+  run_once: yes
+
+- name: "set domain_file to create a STAR certificate"
+  set_fact: domain_file="{% if domain[0] == "." %}star{% endif %}{{ domain }}"
+  delegate_to: localhost
+  run_once: yes
+
+- name: "set the alternative namespace if needed"
+  set_fact: altnames="{% if subjectaltname !='' %}{{ subjectaltname }}{% endif %}"
+
+- name: "set the alternative IP  namespace if needed"
+  set_fact: altnameips="{% if subjectaltnameip !='' %}{{ subjectaltnameip }}{% endif %}"
+
+- name: "create the domain folder to store the certificate artifacts"
+  file: 
+    dest: "{{ ssl_path }}/{{ domain_file }}"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    state: "directory"
+    mode: 0750 
+  delegate_to: localhost
+  run_once: yes
+
+- name: "stat the domain key"
+  stat: path="{{ ssl_path }}/{{ domain_file }}/{{ domain_file }}.key"
+  register: key_file
+  delegate_to: localhost
+  run_once: yes
+
+- name: "stat the pem domain key"
+  stat: path="{{ ssl_path }}/{{ domain_file }}/{{ domain_file }}.key.pem"
+  register: pem_key_file
+  delegate_to: localhost
+  run_once: yes
+
+- name: "generate the openssl config file"
+  template:
+    src: "openssl.cnf.j2"
+    dest: "{{ ssl_path }}/{{ domain_file }}/openssl.cnf"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: 0640
+  delegate_to: localhost
+  run_once: yes
+
+########## self signed
+- name: "Generate Self Signed CRT"
+  shell:  chdir={{ ssl_path }}/{{ domain_file }}
+          export DOMAIN='{{ domain_name }}' && openssl req -newkey rsa:{{ key_size }} -keyout {{ domain_file }}.key -x509 -{{ sha }} -nodes -days 365 -out {{ domain_file }}.crt -subj "{{ SUBJECT }}{{ domain_name }}" -config openssl.cnf -extensions v3_req
+  delegate_to: localhost
+  run_once: yes
+  when: key_file.stat.exists == false
+
+- name: "convert key to pem"
+  shell:  chdir={{ ssl_path }}/{{ domain_file }}
+          export DOMAIN='{{ domain_name }}' && openssl rsa -in {{ domain_file }}.key -outform PEM -out {{ domain_file }}.key.pem
+  delegate_to: localhost
+  run_once: yes
+  when: key_file.stat.exists == false
+
+- name: "Generate CSR"
+  shell: chdir={{ ssl_path }}/{{ domain_file }} 
+         export DOMAIN='{{ domain_name }}' && openssl req -new -{{ sha }} -out {{ domain_file }}.csr -key {{ domain_file }}.key -subj "{{ SUBJECT }}{{ domain_name }}" -config openssl.cnf -extensions v3_req
+  delegate_to: localhost
+  run_once: yes
+  when: key_file.stat.exists == false
+ 
+- name: "Touch Intermediate ca.crt"
+  command:  chdir={{ ssl_path }}/{{ domain_file }} 
+            touch {{ domain_file }}.ca.crt
+  delegate_to: localhost
+  run_once: yes
+  when: key_file.stat.exists == false
+##########
+
+- name: "Change rights"
+  shell: chdir={{ ssl_path }}/{{ domain_file }}
+         chmod 400 {{ domain_file }}*.key
+  delegate_to: localhost
+  run_once: yes
+
+- name: "link all cert files to the ssl folder for compatibility"
+  shell:  chdir={{ ssl_path }}
+          ln -sfn {{ domain_file }}/{{ domain_file }}.{{ item }} .
+  with_items: 
+    - key
+    - key.pem
+    - crt
+    - ca.crt
+
+  delegate_to: localhost
+  run_once: yes

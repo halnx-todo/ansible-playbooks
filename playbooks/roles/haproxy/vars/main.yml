@@ -1,0 +1,5 @@
+install_dir: "{{ app_dir }}/docker-registry"
+config_dir: "{{ install_dir }}/conf"
+storage_path: "{{ base_dir }}/docker-images"
+registry_port: 5000
+

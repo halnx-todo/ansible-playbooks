@@ -1,0 +1,17 @@
+git_repo:
+  name: 'eni-tomcat-todo'
+  repo: 'git@github.com:kanedafromparis/eni-tomcat-todo.git'
+  version: '{{ release }}'
+  ssh_key_file: '/home/ansible/.ssh/id_rsa'
+
+dockerfile_path: Dockerfile
+target: eni-todo-tomcat-mariadb-kub
+
+build_name: "{{ component }}-{{ application }}:{{ release }}"
+build_strategy: dockerfile
+build_args:
+  MULTIPART_LOCATION: '/tmp'
+  DB_DTB_JDBC_URL: 'jdbc:mysql://192.168.56.13:3306/db_todo'
+  DB_DTB_USERNAME: 'springuser'
+  DB_DTB_PASSWORD: 'hardpassword123456'
+

@@ -1,0 +1,285 @@
+###################### FIND DRBD PRIMARY NODE ######################
+  - name: "fail if pvsize has a good suffix"
+    fail: msg="{{ pvsize }} is not using a good suffix {{ suffixes }}"
+    when: pvsize[-1] not in suffixes
+    run_once: true
+    tags:
+      - nfsha
+      - nfsha_quota
+
+  - name: "fail if pvname contains _"
+    shell: echo {{ pvname }} | grep -c "_"  ; true
+    register: pvname_underscore
+    changed_when: False
+    run_once: true
+    tags:
+      - nfsha
+      - drbd_master
+      - nfsha_pvname
+
+  - fail: msg="please remove the underscore (_) from the pvname"
+    when: pvname_underscore.stdout != "0"
+    run_once: true
+    tags:
+      - nfsha
+      - drbd_master
+      - nfsha_pvname
+
+  - name: "set final pv name to the one provided on the command line"
+    set_fact: final_pvname="{{ pvname }}"
+    when: pvname != ""
+    tags:
+      - nfsha
+      - nfsha_pvname
+      - nfsha_quota
+
+##### find cluster master node
+  - name: "find the primary node"
+    shell: drbdadm get-gi nfsha|awk -F':' '{print $7 }' | head -1
+    register: drbd_volume_status
+    changed_when: False
+    tags:
+      - nfsha
+      - nfsha_quota
+      - drbd_master
+
+  - set_fact: drbd_master="{{ inventory_hostname }}"
+    when: drbd_volume_status.stdout == "1"
+    changed_when: False
+    tags:
+      - nfsha
+      - nfsha_quota
+      - drbd_master
+
+  - set_fact: drbd_master="{{ groups['nfsha']| difference([inventory_hostname]) |min  }}"
+    when: drbd_volume_status.stdout == "0"
+    changed_when: False
+    tags:
+      - nfsha
+      - nfsha_quota
+      - drbd_master
+
+# Check quota lists
+  - name: "get the last pv number"
+    shell: xfs_quota -x -c ' report -p -N' /nfsha |grep "pv-nfsha-" | awk '{ print $1 }' | awk -F'-' '{print $NF}'| sort | tail -1
+    become: yes
+    register: last_pv_number
+    run_once: true
+    when: inventory_hostname == drbd_master and pvname == ""
+    tags:
+      - nfsha
+      - nfsha_pvname
+
+  - name: "set pv number to 00001 if no PV exists yet"
+    set_fact: new_pv_number="00001"
+    when: pvname == "" and last_pv_number.stdout == ""
+    tags:
+      - nfsha
+      - nfsha_pvname
+
+  - name: "increase pv number"
+    set_fact: new_pv_number="{{ last_pv_number.stdout|int +1 }}"
+    when: pvname == "" and last_pv_number.stdout != ""
+    tags:
+      - nfsha
+      - nfsha_pvname
+
+  - name: "format pv number"
+    set_fact: new_pv_number="{{ '%05d' % new_pv_number | int}}"
+    when: pvname == "" and last_pv_number.stdout != ""
+    tags:
+      - nfsha
+      - nfsha_pvname
+
+  - name: "auto-create pv name as pv-nfsha-{{ new_pv_number }}"
+    set_fact: final_pvname="pv-nfsha-{{ new_pv_number }}"
+    when: pvname == ""
+    tags:
+      - nfsha
+      - nfsha_pvname
+
+  - debug : msg="creating PV with name {{ final_pvname }}"
+    tags:
+      - nfsha
+      - nfsha_pvname
+
+#### create directory
+  - name: "check if the directory already exists"
+    stat: 
+      path: /nfsha/exports/{{ final_pvname }}
+    register: p
+    when: inventory_hostname == drbd_master
+    tags:
+      - nfsha
+      - nfsha_dir
+
+  - name: "create the directory"
+    file:
+      path: /nfsha/exports/{{ final_pvname }}
+      state: directory
+      owner: "{{ pv_share_user }}"
+      group: "{{ pv_share_group }}"
+      mode: "{{ pv_share_mode }}"
+    when: inventory_hostname == drbd_master and not p.stat.exists
+    tags:
+      - nfsha
+      - nfsha_dir
+
+  - name: "create xfs projects files if needed"
+    file:
+      path: "/etc/{{ item }}"
+      state: touch
+      owner: root
+      group: root
+      mode: 0644
+    with_items:
+      - projects
+      - projid
+    tags:
+      - nfsha
+      - nfsha_dir
+      - nfsha_quota
+
+  - name: "Check project id"
+    shell: grep ":/nfsha/exports/{{ final_pvname }}$" /etc/projects | cut -d":" -f1
+    ignore_errors: true
+    register: p_id
+    tags:
+      - nfsha
+      - nfsha_dir
+      - nfsha_quota
+
+  - name: "get last id"
+    shell: var=$(tail -1 /etc/projects | cut -d':' -f1) ; expr ${var:=0} + 1
+    args:
+      executable: /bin/bash
+    register: l_id
+    when: p_id.stdout == ''
+    tags:
+      - nfsha
+      - nfsha_dir
+      - nfsha_quota
+    
+  - name: "Final id"
+    set_fact: final_id="{{ p_id.stdout }}"
+    when: p_id.stdout != ''
+    tags:
+      - nfsha
+      - nfsha_quota
+    
+  - name: "Final id"
+    set_fact: final_id="{{ l_id.stdout }}"
+    when: p_id.stdout == ''
+    tags:
+      - nfsha
+      - nfsha_quota
+
+  - name: "Insert line in /etc/projects"
+    lineinfile:
+      dest: /etc/projects
+      state: present
+      regexp: "^{{ final_id }}:"
+      line: "{{ final_id }}:/nfsha/exports/{{ final_pvname }}"
+    tags:
+      - nfsha
+      - nfsha_quota
+
+  - name: "Insert line in /etc/projid"
+    lineinfile:
+      dest: /etc/projid
+      state: present
+      regexp: "^{{ final_pvname }}:"
+      line: "{{ final_pvname }}:{{ final_id }}"
+
+  - name: "Initialize quota"
+    shell: xfs_quota -x -c 'project -s {{ final_pvname }}' /nfsha
+    when: inventory_hostname == drbd_master
+    tags:
+      - nfsha
+      - nfsha_quota
+  
+  - name: "Compute hard limit"
+    shell: 'var=$( echo "{{ pvsize }}") ; result=$(units -1 --compact $(echo "${var::-1} * 1.1" | bc -l)${var}iB MiB) ; echo ${result%.*}M'
+    args:
+      executable: /bin/bash
+    when: inventory_hostname == drbd_master
+    register: bhard
+    tags:
+      - nfsha
+      - nfsha_quota
+
+  - name: "Set hard limit"
+    set_fact: hard="{{ bhard.stdout }}"
+    when: inventory_hostname == drbd_master
+    tags:
+      - nfsha
+      - nfsha_quota
+
+  - name: "Add quota"
+    shell: xfs_quota -x -c 'limit -p bsoft={{ pvsize.lower() }}  bhard={{ hard.lower() }} {{ final_pvname }}' /nfsha
+    when: inventory_hostname == drbd_master and pvsize is defined
+    tags:
+      - nfsha
+      - nfsha_quota
+
+  ################# create PV in kubernetes
+  - name: "check if pv name already exist in kubernetes"
+    shell: kubectl get pv | grep -c "{{ final_pvname }} " ; true
+    delegate_to: "{{ groups['k8s_masters'][0] }}"
+    run_once: true
+    register: k8s_pv
+    changed_when: False
+    tags:
+      - nfsha
+      - nfsha_k8s
+      - nfsha_quota
+
+# Add
+  - name: "upload the template for pv creation"
+    template: src="nfs-pv.yaml.j2"
+              dest="/tmp/nfs-pv-{{ final_pvname }}.yaml"
+    delegate_to: "{{ groups['k8s_masters'][0] }}"
+    run_once: true
+    when: k8s_pv.stdout == "0"
+    tags:
+      - nfsha
+      - nfsha_k8s
+
+  - name: "add the pv into openshift"
+    shell: kubectl create -f /tmp/nfs-pv-{{ final_pvname }}.yaml
+    delegate_to: "{{ groups['k8s_masters'][0] }}"
+    run_once: true
+    when: k8s_pv.stdout == "0"
+    tags:
+      - nfsha
+      - nfsha_k8s
+
+  - name: "remove the template for pv creation"
+    file: path="/tmp/nfs-pv-{{ final_pvname }}.yaml"
+          state=absent
+    delegate_to: "{{ groups['k8s_masters'][0] }}"
+    run_once: true
+    when: k8s_pv.stdout == "0"
+    tags:
+      - nfsha
+      - nfsha_k8s
+
+# Update
+  - name: "Update pv size with new quota"
+    shell: kubectl patch pv {{ final_pvname }} -p '{{ pv_patch|to_json }}'
+    delegate_to: "{{ groups['k8s_masters'][0] }}"
+    run_once: true
+    when: k8s_pv.stdout != "0"
+    tags:
+      - nfsha
+      - nfsha_k8s
+      - nfsha_quota
+
+  - name: "Update pv label with new quota"
+    shell: kubectl label --overwrite pv {{ final_pvname }} size={{ pvsize }}i
+    delegate_to: "{{ groups['k8s_masters'][0] }}"
+    run_once: true
+    tags:
+      - nfsha
+      - nfsha_k8s
+      - nfsha_quota

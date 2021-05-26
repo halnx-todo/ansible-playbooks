@@ -1,0 +1,17 @@
+---
+- name: "install docker"
+  hosts: docker
+  #become_user: root
+  become: yes
+  #vars:
+
+  pre_tasks:
+    - shell: echo 'starting install'
+  roles:
+    - { role: docker }
+
+  tasks:
+    - shell: echo 'roles done'
+
+  post_tasks:
+    - shell: echo 'Install done'

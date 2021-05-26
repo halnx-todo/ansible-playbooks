@@ -1,0 +1,13 @@
+---
+  ##################################################################################################
+  # handler to execute when play is done
+  #
+  - name: reboot host
+    #action: command /sbin/reboot
+    debug : msg="Please, reboot your server for the change to take effect..."
+
+  - name: restart nginx
+    service:  name=nginx
+              state=restarted
+    become: yes
+    become_user: root

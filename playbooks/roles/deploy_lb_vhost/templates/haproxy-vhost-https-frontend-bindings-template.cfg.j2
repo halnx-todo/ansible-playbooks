@@ -1,0 +1,10 @@
+# ACL
+
+# Backends
+{% if item.item.default_backend is defined and item.item.default_backend == 'yes' %}
+  default_backend backend-{{ item.item.primary_hostname }}
+{% endif %}
+
+#------------------------------------------------------
+
+

@@ -1,0 +1,20 @@
+######################################################
+######################################################
+listen {{ conf }}
+  bind {{ ip }}:{{ port }}
+  mode tcp
+  option tcplog
+  balance roundrobin
+
+{% if http_check is defined %}
+  option httpchk {{ http_check }}
+  http-check expect status {{ http_status }}
+{% if ssl is defined %}
+  option ssl-hello-chk
+{% endif %}
+{% endif %}
+{% for server in backend_servers %}
+  server {{ server }} {{ server }}:{{ real_port }} check
+{% endfor %}
+#-----------------------------------------------------
+

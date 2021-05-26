@@ -1,0 +1,34 @@
+# vim:ft=ansible:
+---
+
+- set_fact: basedir="{{ base_dir }}"
+  tags:
+   - build
+
+- name: "Create build directory"
+  file:
+    state: directory
+    path: "{{ build_dir }}"
+    mode: 0755
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+  tags:
+    - build
+
+- name: "Create build log directory"
+  file:
+    state: directory
+    path: "{{ build_dir_log }}"
+    mode: 0755
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+  tags:
+    - build
+
+- name: "remove old repo files to start clean"
+  file:
+    path: "{{ build_dir }}/{{ git_repo.name }}"
+    state: "absent"
+  tags:
+    - build
+    - clone

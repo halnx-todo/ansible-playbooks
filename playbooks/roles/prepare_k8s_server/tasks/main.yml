@@ -1,0 +1,287 @@
+#
+# prepare k8s server
+#
+#
+- name : upgrade to latest packages
+  apt: 
+    update_cache: yes
+    force_apt_get: yes
+    cache_valid_time: 3600
+  tags:
+    - upgrade
+
+- name: Upgrade all apt packages
+  apt:
+    upgrade: dist
+    force_apt_get: yes      
+  tags:
+    - upgrade
+
+- name: Check if a reboot is needed for Debian and Ubuntu boxes
+  register: reboot_required_file
+  stat: 
+    path: /var/run/reboot-required 
+    get_md5: no
+  tags:
+    - upgrade
+
+- name: Reboot the Debian or Ubuntu server
+  reboot:
+    msg: "Reboot initiated by Ansible due to kernel updates"
+    connect_timeout: 5
+    reboot_timeout: 300
+    pre_reboot_delay: 0
+    post_reboot_delay: 30
+    test_command: uptime
+  when: reboot_required_file.stat.exists
+  tags:
+    - upgrade
+
+- name: Configure timezone
+  timezone:
+    name: "{{ timezone }}"
+  tags:
+    - time
+
+- name: Set ntp server
+  lineinfile:
+    path: /etc/systemd/timesyncd.conf
+    regexp: "^(#|)NTP="
+    line: "NTP={{ ntp }}"
+  register: setntp
+  tags:
+    - time
+
+- name: Disable/Reenable ntp
+  shell: "timedatectl set-ntp {{ item }}"
+  args:
+    executable: /usr/bin/bash
+  loop:
+    - "off"
+    - "on"
+  when: setntp.changed
+  tags:
+    - time
+
+- name: Add an Apt signing key, uses whichever key is at the URL
+  apt_key:
+    url: "{{ item }}"
+    state: present
+  with_items:
+   - https://packages.cloud.google.com/apt/doc/apt-key.gpg
+   - https://download.docker.com/linux/ubuntu/gpg
+  tags:
+    - repository
+
+- name: Get current ubuntu release
+  shell: lsb_release -cs
+  args:
+    executable: /usr/bin/bash
+  register: ubuntu_release
+
+- name: Copy kubernetes repository def in sources.list.d
+  copy:
+    src: kubernetes.list
+    dest: /etc/apt/sources.list.d
+    mode: 0644
+  tags:
+    - repository
+
+- name: Add docker repository
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ubuntu_release.stdout }} stable"
+    state: present
+    filename: docker
+    
+- name: Install necessary packages
+  apt:
+    pkg:
+    - net-tools
+    - apt-transport-https
+    - curl
+    - vim
+    - git
+    - wget
+    - kubelet
+    - kubeadm
+    - kubectl
+    - gnupg-agent
+    - software-properties-common
+    - ca-certificates
+    - docker-ce 
+    - docker-ce-cli 
+    - containerd.io
+    - kernel-nfs-server
+    state: latest
+    update_cache: yes
+  tags:
+    - packages
+
+- name: Hold k8s packages
+  dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  with_items:
+    - kubelet
+    - kubeadm
+    - kubectl
+  tags:
+    - packages
+
+- name: Get releases
+  shell: kubectl version --client && kubeadm version
+  args:
+    executable: /usr/bin/bash
+  register: k8s_releases
+
+- name: Display
+  debug:
+    msg: "{{ k8s_releases.stdout }}"
+
+- name: Disable SWAP in realtime (1/2)
+  shell: swapoff -a
+  args:
+    executable: /usr/bin/bash
+  tags:
+    - swap
+
+- name: Disable SWAP in fstab (2/2)
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+    replace: '# \1'
+  tags:
+    - swap
+
+- name: Configure docker for systemd cgroups (1/2)
+  file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    mode: 0755
+    owner: root
+    group: root
+  tags:
+    - docker
+ 
+- name: Configure docker daemon for systemd and overlay (2/2)
+  copy:
+    src: docker_daemon.json
+    dest: /etc/docker/daemon.json
+    mode: 0644
+    owner: root
+    group: root
+  tags:
+    - docker
+
+- name: "reload systemd"
+  systemd:
+    name: docker
+    enabled: yes
+    state: restarted
+    daemon_reload: yes
+  tags:
+    - docker
+
+- name: Configure sysctl
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/kubernetes.conf
+    reload: yes
+  loop:
+    - { name: "net.bridge.bridge-nf-call-ip6tables", value: 1 }
+    - { name: "net.bridge.bridge-nf-call-iptables", value: 1 }
+    - { name: "net.ipv4.ip_forward", value: 1 }
+  tags:
+    - sysctl
+
+- name: configure UFW globally
+  ufw:
+    state: enabled
+    rule: allow
+    port: ssh
+    proto: tcp
+  tags:
+    - firewall
+
+- name: Configure ufw defaults
+  ufw: 
+    direction: "{{ item.direction }}" 
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: 'incoming', policy: 'deny' }
+    - { direction: 'outgoing', policy: 'allow' }
+    - { direction: 'routed', policy: 'allow' }
+  tags:
+    - firewall
+
+- name: Configure UFW Firewall for Masters
+  ufw: 
+    rule: allow
+    from_ip: 192.168.56.0/24
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop: 
+    - { port: "6443", proto: "tcp" }
+    - { port: "2379:2380", proto: "tcp" }
+    - { port: "10250:10252", proto: "tcp" }
+    - { port: "8285", proto: "udp" }
+    - { port: "8472", proto: "udp" }
+  when: inventory_hostname in groups['k8s_masters']
+  tags:
+    - firewall
+
+- name: Configure UFW Firewall for Workers
+  ufw: 
+    rule: allow
+    from_ip: 192.168.56.0/24
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop: 
+    - { port: "10250", proto: "tcp" }
+    - { port: "8472", proto: "udp" }
+    - { port: "30000:32767", proto: "tcp" }
+    - { port: "30000:32767", proto: "udp" }
+  when: inventory_hostname in groups['k8s_workers']
+  tags:
+    - firewall
+
+- name: Additionnal Firewall urels for Infra workers nodes
+  ufw: 
+    rule: allow
+    from_ip: 192.168.56.0/24
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop: 
+    - { port: "80", proto: "tcp" }
+    - { port: "443", proto: "tcp" }
+  when: inventory_hostname in groups['k8s_infra']
+  tags:
+    - firewall
+
+- name: "Firewall for nginx ingress controller: masters must access 8443 port"
+  ufw:
+    rule: allow
+    from_ip:  "{{ lookup('dig', '{{ item }}') }}"
+    port: "8443"
+    proto: "tcp"
+  with_items: "{{ groups['k8s_masters'] }}"   
+  when: inventory_hostname in groups['k8s_infra']
+  tags:
+    - firewall
+
+- name: Allow trafic from 10.0.0.0/8 to anywhere (services, kube)
+  ufw:
+    rule: allow
+    from: 10.0.0.0/8
+    to: any
+  tags:
+    - firewall
+ 
+- name: Enable kubelet
+  systemd:
+    enabled: yes
+    name: kubelet
+  tags:
+    - kubelet

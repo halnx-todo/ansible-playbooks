@@ -1,0 +1,13 @@
+# vim:ft=ansible:
+---
+- include: prepare.yml
+  tags:
+    - build
+
+- include: build_{{ build_strategy }}.yml
+  tags: 
+    - build
+
+- include: push.yml
+  tags:
+    - push

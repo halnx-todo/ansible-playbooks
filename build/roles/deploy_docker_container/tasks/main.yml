@@ -1,0 +1,420 @@
+---
+- set_fact: application_path="{{ base_dir }}/{{ component }}-{{ env }}-{{ application }}"
+  tags:
+    - common
+
+- name: "set multiple facts for {{ component }}-{{ env }}-{{ application }}"
+  set_fact: 
+    base_image: "{{ item.docker_image.name | default(component + '-' + application) }}"
+    image: "{{ item.docker_image.name | default(component + '-' + application) }}:{{ release }}"
+    registry_url: "{{ item.docker_image.registry_url | default(docker_registry) }}"
+    registry_login: "{{ item.docker_image.registry_login | default('none') }}"
+    registry_password: "{{ item.docker_image.registry_password | default('none') }}"
+    registry_email: "{{ item.docker_image.registry_email | default('none@none.net') }}"
+    registry_must_login: "{{ item.docker_image.login | default(false) }}"
+    registry_check: "{{ item.docker_image.registry_check | default(false) }}"
+    vhost_name: "{{ item.primary_hostname }}"
+    http_port: "{{ item.http_port | default('8080') }}"
+    https_port: "{{ item.https_port | default('8443') }}"
+    service_port: "{{ item.service_port }}"
+    service_protocol: "{{ item.service_protocol }}"
+    count_per_host: "{{ item.docker_container.count_per_host }}"
+    memory: "{{ item.docker_container.memory | default('512m') }}"
+    cpus: "{{ item.docker_container.cpus | default(1) }}"
+    uid: "{{ item.docker_container.uid | default(0) }}"
+    gid: "{{ item.docker_container.gid | default(0) }}"
+    allow_uploads: "{{ item.allow_uploads | default('no') }}"
+    max_body_size: "{{ item.max_body_size | default('1') }}"
+  when: item.component == component
+  loop: "{{ project_components|flatten(levels=1) }}"
+  tags:
+    - common
+
+- name: "Login to docker registry"
+  docker_login:
+    username: "{{ registry_login }}"
+    password: "{{ registry_password }}"
+    email: "{{ registry_email }}"
+    registry: "{{ registry_url }}"
+    reauthorize: yes
+  when: registry_must_login == true
+  tags:
+    - common
+    - deploy_container
+
+- name: "Check if image is in the docker registry"
+  shell: curl -s -k -X GET https://{{ registry_url }}/v2/{{ base_image }}/tags/list | jq '.tags[] | contains("{{ release }}")' | grep -q true
+  args:
+    warn: false
+  changed_when: false
+  when: registry_check == true
+  tags:
+    - common
+    - deploy_container
+
+# create the directory structure for the application
+- name: "create directory structure {{ application_path }}/... }}"
+  file: 
+    dest: "{{ application_path }}{{ item }}" 
+    mode: 0750
+    owner: "{{ deploy_user }}" 
+    group: "{{ deploy_group }}" 
+    state: directory
+  with_items:
+      - ""
+      - "/etc"
+      - "/etc/ssl"
+      - "/share"
+      - "/var"
+      - "/var/htdocs"
+      - "/volumes"
+      - "/volumes/files"
+  become: yes
+  become_user: root
+  tags:
+    - common
+    - deploy_container
+
+- name: "push docker env file"
+  template: 
+    src: "docker_env_vars.j2"
+    dest: "{{ application_path }}/etc/docker_env.list"
+    owner: "{{ deploy_user }}" 
+    group: "{{ deploy_group }}" 
+    mode: 0640
+  tags:
+    - deploy_container
+
+# MOUNTS
+# emprydir
+- name: "create directory structure for emptydir,  nfs, archive"
+  file:
+    state: directory
+    path: "{{ application_path }}/volumes/{{ item.1.local_path }}"
+    owner: "{{ uid }}"
+    group: "{{ gid }}"
+    mode: 0770
+  when: item.0.component == component and item.1.type in  [ "emptydir", "nfs" , "archive" ]
+  loop: "{{ project_components | subelements('volumes') }}"
+  become: yes
+  become_user: root
+  tags:
+    - deploy_container
+    - volumes
+
+## NFS
+- name: "NFS volumes in fstab"
+  mount: 
+    path: "{{ application_path }}/volumes/{{ item.1.local_path }}" 
+    src: "{{ item.1.nfs_path }}" 
+    fstype: nfs4 
+    state: mounted
+  when: item.0.component == component and item.1.type in  [ "nfs" ]
+  loop: "{{ project_components | subelements('volumes') }}"
+  become: yes
+  tags:
+    - deploy_container
+    - volumes
+
+# Archive
+- name: "Unarchive to destination"
+  unarchive: 
+    src: "{{ item.1.archive_path }}"
+    dest: "{{ application_path }}/volumes/{{ item.1.local_path }}"
+    owner: "{{ uid }}"
+    group: "{{ gid }}"
+  when: item.0.component == component and item.1.type in  [ "archive" ]
+  loop: "{{ project_components | subelements('volumes') }}"
+  become: yes
+  become_user: root
+  tags:
+    - deploy_container
+    - volumes
+
+- name: "build docker volumes list for emptydiri, nfs, archive"
+  set_fact: 
+    volumes_list: "{{ volumes_list + [ application_path + '/volumes/' + item.1.local_path + ':' + item.1.dest_path ] }}"
+  when: item.0.component == component and item.1.type in  [ "emptydir", "nfs", "archive" ]
+  loop: "{{ project_components | subelements('volumes') }}"
+  tags:
+    - deploy_container
+    - volumes
+
+# files
+- name: "Copy files in volumes/files"
+  copy:
+    src: "{{ item.1.local_path }}"
+    dest: "{{ application_path }}/volumes/files/{{ item.1.local_path | basename }}"
+    group: 0
+    mode: 660
+  when: item.0.component == component and item.1.type in  [ "file" ]
+  loop: "{{ project_components | subelements('volumes') }}"
+  become: yes
+  become_user: root
+  tags:
+    - deploy_container
+    - volumes
+
+- name: "Change file rights"
+  file:
+    path: "{{ application_path }}/volumes/files/{{ item.1.local_path | basename }}"
+    owner: "{{ uid }}"
+    group: "{{ gid }}"
+    mode: 0660
+  when: item.0.component == component and item.1.type in  [ "file" ]
+  loop: "{{ project_components | subelements('volumes') }}"
+  become: yes
+  become_user: root
+  tags:
+    - deploy_container
+    - volumes
+
+- name: "Append docker volumes list for files"
+  set_fact: 
+    volumes_list: "{{ volumes_list + [ application_path + '/volumes/files/' + ( item.1.local_path | basename ) + ':' + item.1.dest_file ] }}"
+  when: item.0.component == component and item.1.type in  [ "file" ]
+  loop: "{{ project_components | subelements('volumes') }}"
+  tags:
+    - deploy_container
+    - volumes
+
+- name: "copy docker_remove_current_image.py in /tmp"
+  copy: src="docker_remove_current_image.py"
+        dest="/tmp/docker_remove_current_image.py"
+        owner={{ deploy_user }} group={{ deploy_group }} mode=0740
+  tags:
+    - remove_container
+    - deploy_container
+
+- name: "remove current image"
+  shell: /tmp/docker_remove_current_image.py -s {{ component }}-{{ env }}-{{ application }} -r {{ release }}
+  become: yes
+  become_user: root
+  ignore_errors: True
+  tags:
+     - deploy_container
+     - remove_container
+
+- name: "Pull {{ component }} container"
+  docker_image:
+    name: "{{ registry_url }}/{{ image }}"
+  tags:
+    - deploy_container
+
+- name: "start {{ component }} container"
+  docker_container: 
+    image: "{{ registry_url }}/{{ image }}" 
+    name: "{{ component }}-{{ env }}-{{ application }}_{{ item }}_{{ release }}"
+    memory: "{{ memory }}"
+    cpu_period: 100000
+    cpu_quota: "{{ (cpus|float * 100000 )|int }}"
+    user: "{{ uid }}:0"
+    volumes: "{{ volumes_list }}"
+    env_file: "{{ application_path }}/etc/docker_env.list"
+    restart_policy: always
+    #published_ports: "{{ service_port }}:{{ service_port }}"
+    #log_driver: fluentd
+    #log_options: 
+    #  fluentd-async-connect: true
+    #  labels: component,env,application,release,name
+    labels:
+      component: "{{ component }}"
+      env: "{{ env }}"
+      application: " {{ application }}"
+      release: "{{ release }}"
+      name: "{{ component }}-{{ env }}-{{ application }}_{{ release }}"
+    state: started
+  with_sequence: count={{ count_per_host|int}}
+  tags:
+    - deploy_container
+
+- name: "Get facts"
+  shell: docker inspect "{{ component }}-{{ env }}-{{ application }}_{{ item }}_{{ release }}" 
+  with_sequence: count={{ count_per_host|int}}
+  register: docker_containers
+  tags:
+    - deploy_container
+    - nginx
+        
+- name: "Convert facts to JSON"
+  set_fact:
+    docker_details: "{{ docker_details }} + {{ item.stdout| from_json }}"
+  loop: "{{ docker_containers.results|flatten(levels=1) }}"
+  tags:
+    - deploy_container
+    - nginx
+
+- name: "push nginx vhost file for {{ component }}-{{ place }}-{{ application }}"
+  template: 
+    src: "docker-nginx-vhost-template.j2"
+    dest: "{{ application_path }}/etc/{{ component }}-{{ vhost_name }}.conf"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}" 
+    mode: 0640
+  tags:
+    - deploy_container
+    - nginx
+
+- name: "Link nginx vhost file to sites-*"
+  file: 
+    state: link
+    src: "{{ application_path }}/etc/{{ component }}-{{ vhost_name }}.conf"
+    dest: "/opt/data/nginx/conf/{{ item }}/{{ component }}-{{ vhost_name }}.conf"
+    force: yes
+  with_items:
+    - sites-available
+    - sites-enabled
+  tags:
+    - deploy_container
+    - nginx
+
+- name: "write default listener for ports {{ http_port }} and {{ https_ports }}"
+  template:
+    src: "docker-nginx-default-response.j2"
+    dest: "/opt/data/nginx/conf/sites-available/00_default_{{ http_port }}_{{ https_port }}.conf"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: 0640
+  tags:
+    - deploy_container
+    - nginx
+
+- name: "put default listener to site-enabled"
+  file: 
+    state: link
+    src: "/opt/data/nginx/conf/sites-available/00_default_{{ http_port }}_{{ https_port }}.conf"
+    dest: "/opt/data/nginx/conf/sites-enabled/00_default_{{ http_port }}_{{ https_port }}.conf"
+    force: yes
+  tags:
+    - deploy_container
+    - nginx
+
+- name: Open ports on firewall
+  ufw:
+    rule: allow
+    port: "{{ item[0][item.1] }}"
+    proto: tcp
+  become: yes
+  become_user: root
+  when: item.0.component == component
+  with_nested: 
+  - "{{ project_components }}"
+  - [ 'http_port', 'https_port' ]
+  tags:
+    - deploy_container
+    - nginx
+    - firewall
+
+- name: "create htaccess file"
+  template: 
+    src: "htpasswd.j2"
+    dest: "{{ application_path }}/etc/htpasswd"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}" 
+    mode: 0640
+  tags:
+    - deploy_container
+    - nginx
+
+- name: "Get SSL keys"
+  copy: 
+    src: "/opt/data/ssl/{{ item.0.hostname[0] }}.{{ item.1 }}"
+    dest: "{{ application_path }}/etc/ssl/{{ item.0.hostname[0] }}.{{ item.1 }}"
+    mode: 0600
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    backup: yes
+    force: yes
+  loop: "{{ project_components|product([ 'key', 'ca.crt', 'crt' ])|list }}"
+  tags:
+    - deploy_container
+    - nginx
+    - certificate
+
+- name: "Touch Intermediate ca.crt"
+  shell: "[[ -e /opt/data/ssl/{{ item.hostname[0] }}.ca.crt ]] || touch /opt/data/ssl/{{ item.hostname[0] }}.ca.crt"
+  delegate_to: ansible
+  loop: "{{ project_components|flatten(levels=1) }}"
+  tags:
+    - deploy_container
+    - nginx
+    - certificate
+
+
+- name: "Add ca.crt to crt"
+  shell: cat {{ application_path }}/etc/ssl/{{ item.hostname[0] }}.ca.crt >>{{ application_path }}/etc/ssl/{{ item.hostname[0] }}.crt
+  loop: "{{ project_components|flatten(levels=1) }}"
+  tags:
+    - deploy_container
+    - nginx
+    - certificate
+
+- name: "set owner and mode for certs"
+  file:
+    path: "{{ application_path }}/etc/ssl/{{ item.0.hostname[0] }}.{{ item.1 }}"
+    owner: "{{ deploy_user }}" 
+    group: "{{ deploy_group }}"
+    mode: 0600
+  loop: "{{ project_components|product([ 'key', 'crt' ])|list }}"
+  tags:
+    - deploy_container
+    - nginx
+
+# create a temporary health-check file
+- name: "create health-check file"
+  shell:  chdir="/opt/data/nginx/health-check/"
+          echo "OK" >  status-{{ component }}-{{ env }}-{{ application }}
+  tags:
+    - deploy_container
+    - nginx
+
+- name: "copy error default page 50x.html file"
+  copy: 
+    src: "50x.html"
+    dest: "{{ application_path }}/var/htdocs/50x.html"
+    owner: "{{ deploy_user }}" 
+    group: "{{ deploy_group }}" 
+    mode: 0640
+  tags:
+    - deploy_container
+    - nginx
+
+- name: "Check port (container) is opened"
+  wait_for: 
+    host: "{{ item.NetworkSettings.IPAddress }}" 
+    port: "{{ service_port }}"
+    delay: 1
+    state: started
+  loop: "{{ docker_details| flatten(levels=1) }}"
+  tags:
+    - deploy_container
+    - nginx
+
+- name: "Force reload nginx"
+  service:
+    name: nginx
+    state: reloaded
+  become: yes
+  become_user: root
+  tags:
+    - nginx
+
+- name: "copy docker_remove.py in /tmp"
+  copy: 
+    src: docker_remove.py
+    dest: /tmp/docker_remove.py
+    owner: "{{ deploy_user }}" 
+    group: "{{ deploy_group }}" 
+    mode: 0740
+  tags:
+     - remove_container
+     - deploy_container
+
+- name: "remove old container"
+  shell: /tmp/docker_remove.py -s {{ component }}-{{ env }}-{{ application }} -r {{ release }}
+  become: yes
+  become_user: root
+  ignore_errors: True
+  tags:
+     - deploy_container
+     - remove_container

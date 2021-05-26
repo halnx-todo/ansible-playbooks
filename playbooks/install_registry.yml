@@ -1,0 +1,16 @@
+---
+- name: "install registry"
+  hosts: registry
+  become: yes
+  #vars:
+
+  pre_tasks:
+    - shell: echo 'starting install'
+  roles:
+    - { role: registry }
+
+  tasks:
+    - shell: echo 'roles done'
+
+  post_tasks:
+    - shell: echo 'Install done'

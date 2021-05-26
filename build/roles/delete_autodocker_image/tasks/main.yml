@@ -1,0 +1,103 @@
+# vim:ft=ansible:
+---
+- set_fact: application_path="{{ base_dir }}/{{ component }}-{{ env }}-{{ application }}"
+  tags:
+    - common
+    - deploy_container
+    - certificate
+
+- name: "set multiple facts for {{ component }}-{{ env }}-{{ application }}"
+  set_fact: 
+    image: "{{ item.docker_image.name | default(component + '-' + application) }}:{{ release }}"
+    registry_url: "{{ item.docker_image.registry_url | default(docker_registry) }}"
+    registry_login: "{{ item.docker_image.registry_login | default('none') }}"
+    registry_password: "{{ item.docker_image.registry_password | default('none') }}"
+    registry_email: "{{ item.docker_image.registry_email | default('none@none.net') }}"
+    registry_must_login: "{{ item.docker_image.login | default(false) }}"
+    registry_check: "{{ item.docker_image.registry_check | default(false) }}"
+    vhost_name: "{{ item.primary_hostname }}"
+    service_port: "{{ item.service_port }}"
+    service_protocol: "{{ item.service_protocol }}"
+    count_per_host: "{{ item.docker_container.count_per_host }}"
+    memory: "{{ item.docker_container.memory | default('512m') }}"
+    cpus: "{{ item.docker_container.cpus | default(1) }}"
+    uid: "{{ item.docker_container.uid | default(0) }}"
+    gid: "{{ item.docker_container.gid | default(0) }}"
+  when: item.component == component
+  loop: "{{ project_components|flatten(levels=1) }}"
+  tags:
+    - remove_container
+
+# 1 - Nginx : remove service from node
+- name: "Delete nginx vhost links"
+  file: 
+    path: "/opt/data/apps/nginx/conf/{{ item }}/{{ component }}-{{ vhost_name }}.conf"
+    state: absent
+    force: yes
+  loop:
+    - sites-available
+    - sites-enabled
+  tags:
+    - remove_container
+    - nginx
+
+- name: "Delete health-check file"
+  file:
+    path: "/opt/data/nginx/health-check/status-{{ component }}-{{ env }}-{{ application }}"
+    state: absent
+    force: yes
+  tags:
+    - remove_container
+    - nginx
+
+- name: "Force reload nginx"
+  service:
+    name: nginx
+    state: reloaded
+  become: yes
+  become_user: root
+  tags:
+    - remove_container
+    - nginx
+
+# 2 - Stop containers
+- name: "copy docker_remove_current_image.py in /tmp"
+  copy: src="docker_remove_current_image.py"
+        dest="/tmp/docker_remove_current_image.py"
+        owner={{ deploy_user }} group={{ deploy_group }} mode=0740
+  become: yes
+  become_user: root
+  tags:
+    - remove_container
+    - deploy_container
+
+- name: "remove containers and image"
+  shell: /tmp/docker_remove_current_image.py -s {{ component }}-{{ env }}-{{ application }} -r {{ release }}
+  become: yes
+  become_user: root
+  ignore_errors: True
+  tags:
+     - deploy_container
+     - remove_container
+
+# 3 - Unmount nfs shares
+- name: "Unmount NFS volumes and clear fstab"
+  mount: 
+    path: "{{ application_path }}/volumes/{{ item.1.local_path }}" 
+    src: "{{ item.1.nfs_path }}" 
+    fstype: nfs4 
+    state: absent 
+  when: item.0.component == component and item.1.type in  [ "nfs" ]
+  loop: "{{ project_components | subelements('volumes') }}"
+  become: yes
+
+# 4 - Remove app dir
+- name: "Delete {{ application_path }}"
+  file:
+    path: "{{ application_path }}"
+    state: absent
+  become: yes
+  tags:
+    - remove_container
+
+- debug: msg="Role delete_autodocker_image"

@@ -1,0 +1,17 @@
+---
+- name: "install bind9"
+  hosts: dns 
+  #become_user: root
+  become: yes
+  #vars:
+
+  pre_tasks:
+    - shell: echo 'starting install'
+  roles:
+    - { role: dnsserver }
+
+  tasks:
+    - shell: echo 'roles done'
+
+  post_tasks:
+    - shell: echo 'Install done'

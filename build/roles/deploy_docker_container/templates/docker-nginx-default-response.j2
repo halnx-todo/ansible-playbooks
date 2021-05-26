@@ -1,0 +1,10 @@
+{% for serveralias in project_components %}{% if serveralias.component == component %}
+server {
+  	listen *:{{ serveralias.http_port }}; 
+  	listen *:{{ serveralias.https_port }} ssl;
+   	ssl_certificate 	/opt/data/nginx/ssl/none.crt ;
+  	ssl_certificate_key 	/opt/data/nginx/ssl/none.key ; 
+        return 504;
+}
+{% endif %}
+{% endfor %}

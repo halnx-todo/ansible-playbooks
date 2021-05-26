@@ -1,0 +1,14 @@
+---
+# this file is loaded when a real variable file is not found
+# variables here are useless
+toto: true
+docker_registry: 'registry.diehard.net:5000'
+deploy_user: ansible
+deploy_group: ansible
+default_htaccess: [
+  [ "access", "$apr1$jbuUCyrM$rwV/8XCJvTutkjhIy13hs.", ""]
+]
+build_args:
+  arg1: value1
+dockerfile_path: .
+dockerfile_name: Dockerfile

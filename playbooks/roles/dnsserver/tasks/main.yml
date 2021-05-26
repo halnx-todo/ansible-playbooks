@@ -1,0 +1,70 @@
+
+- name: Install bind9
+  package:
+    name: 
+      - bind9
+      - bind9utils 
+      - bind9-doc 
+      - bind9-host
+      - net-tools
+    state: present
+
+- name: /etc/bind/named.conf.options
+  template:
+    src: named.conf.options.j2
+    dest: /etc/bind/named.conf.options
+    #owner: bin
+    #group: wheel
+    #mode: '0644'
+
+- name: /etc/bind/named.conf.local
+  when: dnsrole=="master"
+  template:
+    src: named.conf.local.j2
+    dest: /etc/bind/named.conf.local
+    #owner: bin
+    #group: wheel
+    #mode: '0644'
+
+- name: /etc/bind/named.conf.options
+  when: dnsrole=="slave"
+  template:
+    src: named.conf.local.slave.j2
+    dest: /etc/bind/named.conf.local
+    #owner: bin
+    #group: wheel
+    #mode: '0644'
+
+- name: /etc/systemd/resolved.conf
+  template:
+    src: resolved.conf.j2
+    dest: /etc/systemd/resolved.conf
+    #owner: bin
+    #group: wheel
+    #mode: '0644'
+
+- name: /etc/bind/db.diehard.net
+  template:
+    src: db.diehard.net.j2
+    dest: /etc/bind/db.diehard.net
+    #owner: bin
+    #group: wheel
+    #mode: '0644'
+
+- name: open ports 53 to public (to be disuss)
+  ufw:
+    rule: allow
+    port: "53"
+    proto: udp
+  tags:
+    - firewall
+
+- name: Start service bind, if not started
+  systemd:
+    name: bind9
+    state: restarted
+
+- name: restart systemd-resolved service
+  service:
+    name: systemd-resolved.service
+    state: restarted

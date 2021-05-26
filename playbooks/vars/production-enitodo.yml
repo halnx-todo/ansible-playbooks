@@ -1,0 +1,72 @@
+vhost_name: website
+
+project_components:
+- component: tomcat 
+  primary_hostname: todo.diehard.net
+  hostname:
+  - todo.diehard.net
+  http_port: 8080
+  https_port: 8443
+  service_port: 8080
+  service_protocol: http
+  redirect_http: no
+  deploy_lb_vhost: yes
+  lb_conf_name: mutualized-production
+  healthcheck_uri: /eni-todo/
+  auth: no
+  allow_uploads: yes
+  max_body_size: 20
+  docker_image: '{{ node_docker_registry }}'
+  docker_container: '{{ node_docker_container }}'
+  volumes: '{{ node_volumes }}'
+
+- component: k8s
+  primary_hostname: eni-todo.diehard.net
+  hostname:
+  - eni-todo.diehard.net
+  http_port: 80
+  https_port: 443
+  service_protocol: http
+  redirect_http: no
+  deploy_lb_vhost: yes
+  openshift_platform: k8s
+  lb_conf_name: mutualized-production
+  lb_cookie_mode: app
+  lb_cookie_name: route
+  healthcheck_uri: /eni-todo/
+  auth: no
+
+node_docker_container:
+  count_per_host: 1
+  cpus: 1
+  memory: 512m
+  uid: 0
+  gid: 0
+  env: "{{ node_docker_env }}"
+
+node_docker_registry:
+  login: no
+  name: "{{ component }}-{{ application }}"
+  registry_url: registry.diehard.net:5000
+  registry_login: none
+  registry_password: none
+  registry_email: 'sebastien.rohaut@pouetpouet.com'
+  registry_check: yes
+
+
+node_docker_env:
+  host: '{{ inventory_hostname }}'
+  component: '{{ component }}'
+  environment: '{{ env }}'
+  application: '{{ application }}'
+  release: '{{ release|default("0.0.0") }}'
+  MULTIPART_LOCATION: '/usr/local/tomcat/files'
+  DB_DTB_JDBC_URL: 'jdbc:mysql://192.168.56.30:3306/db_todo'
+  DB_DTB_USERNAME: 'springuser' 
+  DB_DTB_PASSWORD: 'hardpassword123456'
+
+node_volumes: 
+- type: nfs
+  nfs_path: nfsvip.diehard.net:/eni-todo-storage
+  local_path: eni-todo-storage
+  dest_path: /usr/local/tomcat/files

@@ -1,0 +1,121 @@
+# vim:ft=ansible:
+---
+- name: "Remove links between ACL and backend (HTTP)"
+  lineinfile: 
+    dest: "/etc/haproxy/conf.d/frontend-{{ item.0.lb_conf_name }}-http-bindings.cfg"
+    regexp: '^  use_backend backend-{{ item.0.primary_hostname }} if is_{{ item.1 }}$'
+    #    line: "  use_backend backend-{{ item.0.primary_hostname }} if is_{{ item.1 }}"
+    state: absent
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components| subelements('hostname') }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - del_vhost
+    - del_vhost-config
+
+- name: "Remove ACL rules (HTTP)"
+  lineinfile: 
+    dest: "/etc/haproxy/conf.d/frontend-{{ item.0.lb_conf_name }}-http-bindings.cfg"
+    regexp: '^  acl is_{{ item.1 }} hdr_(reg|end)\(host\) -i (|\^){{ item.1 }}\('
+    state: absent
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components| subelements('hostname') }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - del_vhost
+    - del_vhost-config
+
+
+- name: "Remove links between ACL and backend (HTTPS)"
+  lineinfile: 
+    dest: "/etc/haproxy/conf.d/frontend-{{ item.0.lb_conf_name }}-https-bindings.cfg"
+    regexp: '^  use_backend backend-{{ item.0.primary_hostname }} if is_{{ item.1 }}$'
+    #    line: "  use_backend backend-{{ item.0.primary_hostname }} if is_{{ item.1 }}" 
+    state: absent
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components| subelements('hostname') }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - del_vhost
+    - del_vhost-config
+
+- name: "Remove ACL rules (HTTPS)"
+  lineinfile: 
+    dest: "/etc/haproxy/conf.d/frontend-{{ item.0.lb_conf_name }}-https-bindings.cfg"
+    regexp: '^  acl is_{{ item.1 }} hdr_(reg|end)\(host\) -i (|\^){{ item.1 }}\('
+    state: absent
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components| subelements('hostname') }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - del_vhost
+    - del_vhost-config
+
+# Delete backend files
+- name: "Delete backend configuration file"
+  file: 
+    path: "/etc/haproxy/conf.d/backend-{{ item.primary_hostname }}.cfg" 
+    state: absent
+  when: item.component == component and item.deploy_lb_vhost
+  loop: "{{ project_components }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - del_vhost
+    - del_vhost-config
+
+# Check number of backends in frontend file. No more backends ? Remove all configuration
+- name: "Check Number of ACL in HTTP bindings configuration file and delete frontends if needed"
+  shell: chdir=/etc/haproxy/conf.d 
+    COUNT=0 ;  
+    [ -e frontend-{{ item.lb_conf_name }}-http-bindings.cfg ] && COUNT=$(grep -sc "use_backend" frontend-{{ item.lb_conf_name }}-http-bindings.cfg) ;
+    if [ $COUNT -eq 0 ]; then
+      rm -f frontend-{{ item.lb_conf_name }}-http-bindings.cfg ;
+      rm -f frontend-{{ item.lb_conf_name }}-https-bindings.cfg ;
+      rm -f frontend-{{ item.lb_conf_name }}-http-base.cfg ;
+      rm -f frontend-{{ item.lb_conf_name }}-https-base.cfg ;
+      rm -rf /etc/haproxy/certs/{{ item.lb_conf_name }} ; 
+    fi
+  when: item.component == component and item.deploy_lb_vhost 
+  loop: "{{ project_components }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - del_vhost
+    - del_vhost-config
+
+# Rebuild haproxy configuration file  
+- name: "concat configuration file to haproxy.cfg"
+  shell: chdir=/etc/haproxy cat conf.d/*.cfg > haproxy.cfg
+  become: yes
+  become_user: haproxy
+  tags:
+    - del_vhost
+
+# VRRP : Use sed because lineinfile seems to have a bug with variables and with_nested
+- name: "Complete the vhost (for vrrp)"
+  set_fact: 
+    lb_bind_ip: "{{lb_confs[ item.lb_conf_name ].lb_bind_ip }}"
+  when: item.component == component and item.deploy_lb_vhost 
+  loop: "{{ project_components }}"
+  tags:
+    - lb_vhost
+    - ip
+
+# IP no more used in frontends ?
+- name: "Remove IP to VRRP configuration file if needed"
+  shell: chdir=/etc/haproxy/conf.d
+    grep -q "bind {{ item[1].ip }}:" frontend*.cfg 2>/dev/null ;
+    [ $? -ne 0 ] && sed -i '/^{{ item[1].ip }}$/d' /etc/keepalived/ip_{{ item[1].instance }}.conf || true
+  when: item.0.component == component and item.0.deploy_lb_vhost 
+  loop: "{{ project_components | product(lb_bind_ip)|list }}"
+  become: yes
+  become_user: root
+  tags:
+    - del_vhost
+
+- debug: msg="End of delete_lb_vhost"

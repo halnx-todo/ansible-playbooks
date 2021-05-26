@@ -1,0 +1,13 @@
+vars_exported_in_env: ""
+environments: "prod"
+docker_containers: {}
+
+
+# certificate SSL
+
+ssl_path: "/tmp/ssl"
+C: "FR"
+ST: "IDF"
+L: "PARIS"
+O: "ENI"
+OU: "ENI"

@@ -1,0 +1,10 @@
+---
+
+- name: Build image with s2i
+  shell: "{{ s2i_path }} build {{ git_repo }} {{ docker_registry }}/{{ build_s2i_image }} {{ docker_registry }}/{{ docker_image_full_name }} -r {{ release }} 2>&1 |tee -a {{ build_dir }}/{{ build_name }}.log {{ build_dir_log }}/{{ build_name }}.txt"
+  when: build_s2i_env_var is undefined
+
+- name: Build image with s2i (use env var)
+  shell: "{{ s2i_path }} build {{ git_repo }} {{ docker_registry }}/{{ build_s2i_image }} {{ docker_registry }}/{{ docker_image_full_name }} -r {{ release }} {{ build_s2i_env_var }} 2>&1 |tee -a {{ build_dir }}/{{ build_name }}.log {{ build_dir_log }}/{{ build_name }}.txt"
+  when: build_s2i_env_var is defined
+

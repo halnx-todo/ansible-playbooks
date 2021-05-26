@@ -1,0 +1,8 @@
+build_name: "{{ component }}-{{ application }}:{{ release }}"
+lock_file: "/tmp/{{ build_name }}.sh-lock"
+build_dir: "{{ base_dir }}/container_build/{{ build_name }}"
+build_dir_log: "{{ base_dir }}/container_build/log/{{ build_name }}"
+docker_registry: "registry.diehard.net:5000"
+docker_registries:
+        - "registry.diehard.net:5000"
+

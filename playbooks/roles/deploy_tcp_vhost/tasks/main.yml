@@ -1,0 +1,60 @@
+---
+- name: "Copy TCP template to HAProxy configuration directory"
+  template: 
+    src: haproxy-tcp-frontend.cfg.j2 
+    dest: "/etc/haproxy/conf.d/frontend-{{ conf }}-tcp.cfg"
+    backup: yes
+    owner: haproxy
+    group: haproxy
+    mode: 0640
+  tags:
+    - tcp_vhost
+
+- name: "concat configuration file to haproxy.cfg"
+  shell: cat conf.d/*.cfg > haproxy.cfg
+  args:
+    executable: /usr/bin/bash
+    chdir: /etc/haproxy
+  tags:
+    - tcp_vhost
+
+- name: "Change haproxy rights"
+  file:
+    path: /etc/haproxy/haproxy.cfg
+    mode: 0640
+    owner: haproxy
+    group: haproxy
+  tags:
+    - lb_vhost
+
+- name: "Add IP to VRRP configuration file"
+  lineinfile: 
+    dest: "/etc/keepalived/ip_{{ instance }}.conf"
+    regexp: "{{ ip }} dev {{ iface }}"
+    line: "{{ ip }} dev {{ iface }}" 
+    insertbefore: "}"
+  tags:
+    - tcp_vhost
+
+- name: "Add firewall rule (no src)"
+  ufw:  
+    rule: allow 
+    port: "{{ port }}" 
+    proto: tcp 
+    dest: "{{ ip }}"
+  when: src_ip is not defined
+  tags:
+    - tcp_vhost
+
+- name: "Add firewall rule (with src)"
+  ufw:  
+    rule: allow 
+    port: "{{ port }}" 
+    proto: tcp 
+    src: "{{ item }}" 
+    dest: "{{ ip }}"
+  when: src_ip is defined
+  with_items: src_ip
+  tags:
+    - tcp_vhost
+    - firewall

@@ -1,0 +1,32 @@
+---
+####################################################
+# Use like :
+#
+# ansible-playbook build/build_docker_image.yml -e "component=tomcat application=enitodo release=dev"
+#
+- name: "Build docker image {{ component }}-{{ application }}:{{ release }}"
+  hosts: infra01
+  become_user: ansible
+  become: yes
+  vars:
+    - base_dir: "/var/build"
+    - app_dir: "{{ base_dir }}/apps" # base installation dir, usualy /opt/data - will be moved to global config soon
+    - src_dir: "{{ base_dir }}/src" # where the source packages (like java) are to be found before install
+    - data_dir: "{{ base_dir }}"      # where to store application data
+
+  vars_files : 
+    - ['vars/default.yml']
+    - ["vars/{{ application }}.yml", "vars/default.yml"]
+    - ["vars/{{ component }}-{{ application }}.yml", "vars/default.yml"]
+
+  pre_tasks:
+    - debug: msg='starting build of {{ component }}-{{ application }}-{{ release }}'
+  roles:
+    - { role: build_docker_image }
+
+  tasks:
+    - debug: msg='roles done'
+
+  post_tasks:
+    - debug: msg='Install done'
+

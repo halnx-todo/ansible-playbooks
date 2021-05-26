@@ -1,0 +1,6 @@
+{% for serveralias in project_components %}{% if serveralias.component == component %}
+{% for env_var_key, env_var_value in serveralias.docker_container.env.items() %}
+{{ env_var_key }}={{ env_var_value }}
+{% endfor %}
+{% endif %}
+{% endfor %}

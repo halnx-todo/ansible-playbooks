@@ -1,0 +1,18 @@
+frontend  stats 
+  bind 0.0.0.0:9000       #Listen on all IP's on port 9000
+  mode http
+  option dontlognull
+  option dontlog-normal
+
+  timeout client 5000
+
+  stats enable
+  stats hide-version
+  stats uri /lb/{{ inventory_hostname }}/stats
+  stats show-desc Load Balancer {{ inventory_hostname }}
+  stats show-node {{ inventory_hostname }}
+  stats show-legends
+  stats realm     HAProxy\ Statistics on {{ inventory_hostname }}
+  stats auth      lbadmin:lbadmin
+  stats admin if TRUE
+

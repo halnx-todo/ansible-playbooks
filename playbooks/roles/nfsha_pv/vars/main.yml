@@ -1,0 +1,18 @@
+pvname: ""
+pvsize: "1G"
+pv_share_user: "nobody"
+pv_share_group: "nogroup"
+pv_share_mode: "770"
+pcs_vip_ip: '192.168.56.12'
+suffixes:
+  - K
+  - M
+  - G
+  - T
+  - P
+  - E
+
+pv_patch:
+  spec:
+    capacity:
+      storage: "{{ pvsize }}i"

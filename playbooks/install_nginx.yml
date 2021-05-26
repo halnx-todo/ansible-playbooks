@@ -1,0 +1,16 @@
+---
+- name: "install nginx and dependencies"
+  hosts: nginx
+  vars:
+    - base_dir: "/opt/data"
+    - data_dir: "{{ base_dir }}" 
+  vars_files:
+    - "vars/default.yml"
+  pre_tasks:
+    - shell: echo 'starting install'
+  roles:
+    - { role: nginx }
+  tasks:
+    - shell: echo 'roles done'
+  post_tasks:
+    - shell: echo 'install done'

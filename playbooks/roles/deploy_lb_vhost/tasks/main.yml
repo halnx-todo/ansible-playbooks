@@ -1,0 +1,545 @@
+# vim:ft=ansible:
+---
+- name: "Create directory for whitelist/backlist"
+  file: 
+    path: /etc/haproxy/whitelists
+    state: directory
+    mode: 0770
+    owner: haproxy
+    group: haproxy
+  become: yes 
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+    - whitelist
+    
+- name: "copy whitelist file"
+  copy: 
+    src: "whitelist_{{ item.primary_hostname }}.list" 
+    dest: "/etc/haproxy/whitelists/{{ item.primary_hostname }}.list"
+    mode: 0640
+    owner: haproxy
+    group: haproxy
+  when: item.component == component and item.deploy_lb_vhost and item.whitelist is defined and item.whitelist == 'yes'
+  loop: "{{ project_components| flatten(levels=1) }}"
+  become: yes 
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+    - whitelist
+
+- name: "Check presence of base HTTP configuration file"
+  stat: 
+    path: "/etc/haproxy/conf.d/frontend-{{ item.lb_conf_name }}-http-base.cfg"
+  loop: "{{ project_components| flatten(levels=1) }}"
+  register: p_http
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+
+- name: "Copy HTTP lb frontend configuration file"
+  template: 
+    src: "haproxy-vhost-http-frontend-base-template.cfg.j2"
+    dest: "/etc/haproxy/conf.d/frontend-{{ item.item.lb_conf_name }}-http-base.cfg"
+    owner: haproxy
+    group: haproxy
+    mode: 0640
+  when: item.skipped is not defined
+  loop: "{{ p_http.results| flatten(levels=1) }}"
+  become: yes
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+
+- name: "Check presence of HTTP bindings configuration file"
+  stat: 
+    path: "/etc/haproxy/conf.d/frontend-{{ item.lb_conf_name }}-http-bindings.cfg"
+  loop: "{{ project_components| flatten(levels=1) }}"
+  register: p_http_bindings
+  become: yes
+  become_user: haproxy
+  when: item.component == component and item.deploy_lb_vhost 
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+- name: "Copy HTTP lb frontend bindings configuration file"
+  template: 
+    src: "haproxy-vhost-http-frontend-bindings-template.cfg.j2"
+    dest: "/etc/haproxy/conf.d/frontend-{{ item.item.lb_conf_name }}-http-bindings.cfg"
+    owner: haproxy
+    group: haproxy
+    mode: 0640
+  when: item.skipped is not defined and (force == 'yes' or not item.stat.exists)
+  loop: "{{ p_http_bindings.results| flatten(levels=1) }}"
+  become: yes
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+- name: "link the backend server to the HTTP frontend"
+  lineinfile: 
+    dest: "/etc/haproxy/conf.d/frontend-{{ item.0.lb_conf_name }}-http-bindings.cfg"
+    regexp: "^  use_backend backend-{{ item.0.primary_hostname }} if is_{{ item.1 }}$"
+    insertafter: "^# Backends"
+    line: "  use_backend backend-{{ item.0.primary_hostname }} if is_{{ item.1 }}"
+    state: present
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components| subelements('hostname') }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+- name: "update HTTP frontend configuration file with ACL"
+  lineinfile: 
+    dest: "/etc/haproxy/conf.d/frontend-{{ item.0.lb_conf_name }}-http-bindings.cfg"
+    regexp: '^  acl is_{{ item.1 }} hdr_(reg|end)\(host\) -i (|\^){{ item.1 }}'
+    insertafter: '^# ACL'
+    line: '  acl is_{{ item.1 }} hdr_reg(host) -i ^{{ item.1 }}(|:{{ lb_confs[item.0.lb_conf_name].lb_http_port }})$'
+    state: present
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components| subelements('hostname') }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+
+# Same thing for HTTPS
+- name: "Check presence of base HTTPS configuration file"
+  stat: 
+    path: '/etc/haproxy/conf.d/frontend-{{ item.lb_conf_name }}-https-base.cfg'
+  when: item.component == component and item.deploy_lb_vhost
+  loop: "{{ project_components | flatten(levels=1) }}"
+  register: p_https
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+- name: "Copy HTTPS lb frontend configuration file"
+  template: 
+    src: haproxy-vhost-https-frontend-base-template.cfg.j2
+    dest: '/etc/haproxy/conf.d/frontend-{{ item.item.lb_conf_name }}-https-base.cfg'
+    owner: haproxy
+    group: haproxy
+    mode: 0640
+  when: item.skipped is not defined
+  loop: "{{ p_https.results|flatten(levels=1) }}"
+  become: yes
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+- name: "Check presence of HTTPS bindings configuration file"
+  stat: 
+    path: '/etc/haproxy/conf.d/frontend-{{ item.lb_conf_name }}-https-bindings.cfg'
+  when: item.component == component and item.deploy_lb_vhost
+  loop: "{{ project_components | flatten(levels=1) }}"
+  register: p_https_bindings
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+- name: "Copy HTTPS lb frontend bindings configuration file"
+  template: 
+    src: haproxy-vhost-https-frontend-bindings-template.cfg.j2
+    dest: '/etc/haproxy/conf.d/frontend-{{ item.item.lb_conf_name }}-https-bindings.cfg'
+    owner: haproxy
+    group: haproxy
+    mode: 0640
+  when: item.skipped is not defined and (force == 'yes' or not item.stat.exists)
+  loop: "{{ p_https_bindings.results|flatten(levels=1) }}"
+  become: yes
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+- name: "link the backend server to the HTTPS frontend"
+  lineinfile: 
+    dest: "/etc/haproxy/conf.d/frontend-{{ item.0.lb_conf_name }}-https-bindings.cfg"
+    regexp: "^  use_backend backend-{{ item.0.primary_hostname }} if is_{{ item.1 }}$"
+    insertafter: "^# Backends"
+    line: "  use_backend backend-{{ item.0.primary_hostname }} if is_{{ item.1 }}" 
+    state: present
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components | subelements('hostname') }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+- name: "update HTTPS frontend configuration file with ACL"
+  lineinfile: 
+    dest: '/etc/haproxy/conf.d/frontend-{{ item.0.lb_conf_name }}-https-bindings.cfg'
+    regexp: '^  acl is_{{ item.1 }} hdr_(end|reg)\(host\) -i (|\^){{ item.1 }}'
+    insertafter: "^# ACL"
+    line: '  acl is_{{ item.1 }} hdr_reg(host) -i ^{{ item.1 }}(|:{{ lb_confs[item.0.lb_conf_name].lb_https_port }})$'
+    state: present
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components | subelements('hostname') }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+
+- name: "Copy lb backend configuration file"
+  template: 
+    src: 'haproxy-vhost-backend-template.cfg.j2'
+    dest: '/etc/haproxy/conf.d/backend-{{ item.0.primary_hostname }}.cfg'
+    owner: haproxy
+    group: haproxy
+    mode: 0640
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components | subelements('hostname') }}"
+  become: yes
+  tags:
+    - lb_vhost
+    - lb_vhost-config
+    - whitelist
+
+# Only if something modified
+- name: "concat configuration file to haproxy.cfg"
+  shell: chdir=/etc/haproxy cat conf.d/*.cfg > haproxy.cfg
+  become: yes
+  become_user: root
+  tags:
+    - lb_vhost
+
+- name: "Change haproxy rights"
+  file:
+    path: /etc/haproxy/haproxy.cfg
+    mode: 0640
+    owner: haproxy
+    group: haproxy
+  become: yes
+  tags:
+    - lb_vhost
+
+# Certs
+- name: "Make certs directory"
+  file: 
+    path: /etc/haproxy/certs/{{ item.lb_conf_name }} 
+    state: directory
+    mode: 0700
+    owner: haproxy
+    group: haproxy
+  when: item.component == component and item.deploy_lb_vhost
+  loop: "{{ project_components| flatten(levels=1) }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - certificate
+
+# Client Certs
+- name: "Make client certs directory"
+  file: 
+    path: /etc/haproxy/client_certs/{{ item.lb_conf_name }} 
+    state: directory
+    mode: 0700
+    owner: haproxy
+    group: haproxy
+  when: item.component == component and item.deploy_lb_vhost
+  loop: "{{ project_components| flatten(levels=1) }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - certificate
+
+# Test certificates
+- name: "Stat crt"
+  stat:
+    path: "{{ ssl_directory }}/{{ item.1 }}.crt"
+    follow: yes
+  register: crt_stat
+  run_once: yes
+  delegate_to: localhost
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components | subelements('hostname') }}"
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "Does crt exist ?"
+  fail: 
+    msg: "{{ item.stat.path }} doesn't exist or 0 size"
+  failed_when: item.stat.exists == false or item.stat.size == 0
+  when: item.skipped is not defined
+  run_once: yes
+  loop: "{{ crt_stat.results | flatten(levels=1) }}"
+  #with_items: crt_stat.results
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "Stat ca.crt"
+  stat:
+    path: "{{ ssl_directory }}/{{ item.1 }}.ca.crt"
+    follow: yes
+  register: cacrt_stat
+  delegate_to: localhost
+  run_once: yes
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components | subelements('hostname') }}"
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "Does ca.crt exist ?"
+  fail: 
+    msg: "{{ item.stat.path }} doesn't exist or 0 size"
+  failed_when: item.stat.exists == false or item.stat.size == 0
+  when: item.skipped is not defined
+  run_once: yes
+  ignore_errors: true
+  loop: "{{ cacrt_stat.results | flatten(levels=1) }}"
+  #with_items: cacrt_stat.results
+  tags:
+    - lb_vhost
+    - certificate
+
+
+- name: "Stat key"
+  stat:
+    path: "{{ ssl_directory }}/{{ item.1 }}.key.pem"
+    follow: yes
+  register: key_stat
+  delegate_to: localhost
+  run_once: yes
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components | subelements('hostname') }}"
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "Does key exist ?"
+  fail: 
+    msg: "{{ item.stat.path }} doesn't exist or 0 size"
+  failed_when: item.stat.exists == false or item.stat.size == 0
+  when: item.skipped is not defined
+  run_once: yes
+  loop: "{{ key_stat.results | flatten(levels=1) }}"
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "upload SSL .crt certificates"
+  copy:
+    src: "/opt/data/ssl/{{ item.1 }}.crt"
+    dest: "/etc/haproxy/certs/{{ item.0.lb_conf_name }}/{{ item.1 }}.crt"
+    follow: yes
+    owner: haproxy
+    group: haproxy
+    mode: 0640
+    force: yes
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components | subelements('hostname') }}"
+  become: yes
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "upload SSL .key.pem certificates"
+  copy:
+    src: "/opt/data/ssl/{{ item.1 }}.key.pem"
+    dest: "/etc/haproxy/certs/{{ item.0.lb_conf_name }}/{{ item.1 }}.key.pem"
+    follow: yes
+    owner: haproxy
+    group: haproxy
+    mode: 0640
+    force: yes
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components | subelements('hostname') }}"
+  become: yes
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "upload SSL .ca.crt certificates"
+  copy:
+    src: "/opt/data/ssl/{{ item.1 }}.ca.crt"
+    dest: "/etc/haproxy/certs/{{ item.0.lb_conf_name }}/{{ item.1 }}.ca.crt"
+    follow: yes
+    owner: haproxy
+    group: haproxy
+    mode: 0640
+    force: yes
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components | subelements('hostname') }}"
+  become: yes
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "Build chain certificate"
+  shell: chdir=/etc/haproxy/certs/{{ item.0.lb_conf_name }} cat {{ item.1 }}.crt {{ item.1 }}.key.pem {{ item.1 }}.ca.crt > {{ item.1 }}.pem
+  when: item.0.component == component and item.0.deploy_lb_vhost
+  loop: "{{ project_components | subelements('hostname') }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "Change chain certificate rights"
+  file:
+    path: /etc/haproxy/certs/{{ item.0.lb_conf_name }}/{{ item.1 }}.pem
+    mode: 0600
+    owner: haproxy
+    group: haproxy
+  loop: "{{ project_components | subelements('hostname') }}"
+  become: yes
+  tags:
+    - lb_vhost
+    - certificate
+
+# Client certs
+- name: "Get client certs list"
+  set_fact: 
+    client_certs: "{{ lb_confs[ item.lb_conf_name ].client_certs }}"
+  when: item.component == component and item.deploy_lb_vhost and lb_confs[ item.lb_conf_name ].client_certs is defined
+  loop: "{{ project_components }}"
+
+- name: "upload SSL client certificates"
+  copy:
+    src: "/opt/data/ssl/{{ item.1 }}.crt"
+    dest: "/etc/haproxy/client_certs/{{ item.0.lb_conf_name }}/{{ item.1 }}.crt"
+    owner: haproxy
+    group: haproxy
+    mode: 0640
+    force: yes
+  when: item.0.component == component and item.0.deploy_lb_vhost and client_certs is defined
+  loop: "{{ project_components | product(client_certs|default([]))| list }}"
+  become: yes
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "Build client chain certificate"
+  shell: chdir=/etc/haproxy/client_certs/{{ item.lb_conf_name }} cat *.crt >{{ item.lb_conf_name }}.pem
+  when: item.component == component and item.deploy_lb_vhost and client_certs is defined
+  loop: "{{ project_components }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "Change chain certificate rights"
+  file:
+    path: "/etc/haproxy/client_certs/{{ item.lb_conf_name }}/{{ item.lb_conf_name }}.pem"
+    mode: 0600
+    owner: haproxy
+    group: haproxy
+  when: lb_confs[ item.lb_conf_name ].client_verify is defined
+  loop: "{{ project_components }}"
+  become: yes
+  become_user: root
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "Remove intermediate Server SSL certs"
+  shell: chdir=/etc/haproxy/certs/{{ item.lb_conf_name }} rm -f *.crt *.key.pem *.ca.crt
+  when: item.component == component and item.deploy_lb_vhost
+  loop: "{{ project_components }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - certificate
+
+- name: "Remove intermediate Client SSL certs"
+  shell: chdir=/etc/haproxy/client_certs/{{ item.lb_conf_name }} rm -f *.crt
+  when: item.component == component and item.deploy_lb_vhost and client_certs is defined
+  loop: "{{ project_components }}"
+  become: yes
+  become_user: haproxy
+  tags:
+    - lb_vhost
+    - certificate
+
+# VRRP : Use sed because lineinfile seems to have a bug with variables and with_nested
+- name: "Complete the vhost (for vrrp)"
+  set_fact: 
+    foo_item: "{{ lb_confs[ item.lb_conf_name ].lb_bind_ip }}"
+  when: item.component == component and item.deploy_lb_vhost
+  loop: "{{ project_components }}"
+  register: foo_results
+  tags:
+    - lb_vhost
+    - ip
+    - test
+
+- name: 'Rebuild lb_bind_ip'
+  set_fact: 
+    lb_bind_ip: "{% for i in foo_results.results %}{% if i.skipped is not defined %}{{ i.ansible_facts.foo_item }}{% if not loop.last %},{% endif %}{% endif %}{% endfor %}"
+  tags:
+    - lb_vhost
+    - ip
+    - test
+
+- debug: 
+    msg: "{{ lb_bind_ip }}"
+    #msg: "{{ foo_results.results[1].ansible_facts }}"
+  tags:
+    - lb_vhost
+    - ip
+    - test
+
+- name: "add ip to vrrp configuration file"
+  lineinfile:
+    path: "/etc/keepalived/ip_{{ item[1].instance }}.conf"
+    regexp: "^{{ item[1].ip }}$"
+    line: "{{ item[1].ip }}"
+    state: present
+    insertbefore: '}'
+  when: item[0].deploy_lb_vhost and lb_bind_ip != ""
+  loop: "{{ project_components | product(lb_bind_ip)|list }}"
+  become: yes
+  become_user: root
+  tags:
+    - lb_vhost
+    - ip
+
+- name: "open firewall for http port for internet"
+  ufw: 
+    rule: allow 
+    to_port: "{{ lb_confs[item.0.lb_conf_name].lb_http_port }}" 
+    to_ip: "{{ item.1.ip }}"
+    proto: tcp
+  when: item.0.deploy_lb_vhost and item.0.component == component
+  loop: "{{ project_components | product(lb_bind_ip)|list }}"
+  become_user: root
+  become: yes
+  tags:
+    - lb_vhost
+    - lb_vhost-firwall
+
+- name: "open firewall for https port for internet"
+  ufw: 
+    rule: allow 
+    to_port: "{{ lb_confs[item.0.lb_conf_name].lb_https_port }}"
+    to_ip: "{{ item.1.ip }}" 
+    proto: tcp
+  when: item.0.deploy_lb_vhost and item.0.component == component
+  loop: "{{ project_components | product(lb_bind_ip)|list }}"
+  become_user: root
+  become: yes
+  tags:
+    - lb_vhost
+    - lb_vhost-firwall

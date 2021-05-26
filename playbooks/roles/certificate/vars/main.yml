@@ -1,0 +1,15 @@
+ssl_path: "/opt/data/ssl"
+C: "FR"
+ST: "IDF"
+L: "PARIS"
+# for self-signed to generate a certificate through ATS
+O: "MyCompany"
+OU: "MyCompany"
+E: 'sebastien.rohaut@mydomain.com'
+# define subjectaltname as : "DNS.1=toto.com,DNS.2=media.toto.com
+subjectaltname: ""
+key_size: 4096
+dhparam: "true"
+subjectaltnam: ""
+subjectaltnameip: ""
+sha: "sha256"

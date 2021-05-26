@@ -1,0 +1,41 @@
+---
+#
+# delete a docker image on the target hosts
+#
+#    ansible-playbook delete_docker_container.yml -e "component=nginx env=production application=static release=1.0.0"
+- hosts: "{{ hostlist }}"
+  serial: 1
+  vars:
+    - hostlist: "{{ component }}-{{ env }}-{{ application }}"
+    - base_dir: "/opt/data"             # base installation dir, usualy /opt/data - will be moved to global config soon
+    - data_dir: "/opt/data"             # where to put the applications data (healthcheck, db files...)
+    - volumes_list: []
+    - docker_details: []
+  vars_files:
+    - ["roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/default-vault.yml"]
+    - ["roles/deploy_docker_container/vars/{{ env }}.yml", "roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/{{ env }}-vault.yml", "roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/{{ component }}-{{ env }}.yml", "roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/{{ component }}-{{ env }}-vault.yml", "roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/{{ application }}.yml", "roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/{{ application }}-vault.yml", "roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/{{ env }}-{{ application }}.yml", "roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/{{ env }}-{{ application }}-vault.yml", "roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/{{ component }}-{{ env }}-{{ application }}.yml", "roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/{{ component }}-{{ env }}-{{ application }}-vault.yml", "roles/deploy_docker_container/vars/default.yml"]
+
+    - ["roles/deploy_docker_container/vars/lb_confs.yml", "roles/deploy_docker_container/vars/default.yml"]
+    - ["roles/deploy_docker_container/vars/lb_confs-vault.yml", "roles/deploy_docker_container/vars/default.yml"]
+
+  pre_tasks:
+    - debug: msg='starting removal of {{ component }}-{{ application }}-{{ release }}'
+
+  roles:
+    - { role: delete_docker_container }
+
+  tasks:
+    - debug: msg='roles done'
+
+  post_tasks:
+    - debug: msg='Install done'

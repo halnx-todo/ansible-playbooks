@@ -1,0 +1,100 @@
+ansible ansible_connection=ssh datacenter=home host_type=vm 
+registry ansible_connection=ssh datacenter=home host_type=vm 
+jenkins ansible_connection=ssh datacenter=home host_type=vm 
+lb0 ansible_connection=ssh datacenter=home host_type=vm
+lb1 ansible_connection=ssh datacenter=home host_type=vm
+node1 ansible_connection=ssh datacenter=home host_type=vm
+node2 ansible_connection=ssh datacenter=home host_type=vm
+nfsha01 ansible_connection=ssh datacenter=home host_type=vm
+nfsha02 ansible_connection=ssh datacenter=home host_type=vm
+
+[all:vars]
+ntp=fr.pool.ntp.org
+timezone="Europe/Paris"
+
+[nfsha]
+nfsha01
+nfsha02
+
+[nfsha:vars]
+nfs_vip=192.168.56.12
+
+
+[home]
+infra01
+infra02
+nfsha01
+nfsha02
+k8s_master01
+k8s_master02
+k8s_master03
+k8s_worker01
+k8s_worker02
+k8s_worker03
+k8s_worker04
+node1
+node2
+
+[home:vars]
+lan_subnets=['192.168.56.0/24']
+
+[nginx]
+node1
+node2
+
+[docker]
+node1
+node2
+
+[nginx-production-static]
+node1
+node2
+
+[tomcat-production-enitodo]
+node1
+node2
+
+[k8s_masters]
+k8s-master01
+k8s-master02
+k8s-master03
+
+[k8s_workers]
+k8s-worker01
+k8s-worker02
+k8s-worker03
+k8s-worker04
+
+[k8s_infra]
+k8s-worker01
+k8s-worker02
+
+[k8s:children]
+k8s_masters
+k8s_workers
+
+[dns]
+infra01 dnsrole=master
+infra02 dnsrole=slave
+
+[lb]
+infra01 vrrp_prio=101 internet_ip=171.18.94.56
+infra02 vrrp_prio=51 internet_ip=171.18.94.60
+
+[registry]
+infra01
+
+[lb:vars]
+vrrp_type=BACKUP
+quagga=true
+gw_vip=192.168.56.19
+lan_iface=enp0s8
+lan_network=192.168.56.0
+lan_netmask=24
+intranet_iface=enp0s3
+intranet_network=192.168.1.0
+intranet_netmask=24
+internet_iface=enp0s9
+internet_network=171.18.94.0
+internet_netmask=25
+

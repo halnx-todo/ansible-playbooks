@@ -1,0 +1,22 @@
+---
+- name: "install HAProxy - OSPF (quagga)  - VRRP (Keepalived) load balancing"
+  hosts: lb:&{{ datacenter }} # env use intersection bewteen groups
+  #become_user: root
+  become: yes
+  vars:
+    - haproxy_confdir: "/etc/haproxy"
+    - haproxy_logdir: "/var/log/haproxy"
+    - src_dir: "{{ base_dir }}/src" 
+    - data_dir: "{{ base_dir }}" 
+
+  pre_tasks:
+    - shell: echo 'starting install'
+  roles:
+    - { role: haproxy }
+
+  tasks:
+    - shell: echo 'roles done'
+
+  post_tasks:
+    - shell: echo 'Install done'
+

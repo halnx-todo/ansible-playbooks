@@ -1,0 +1,29 @@
+---
+######################################################################################################
+#
+# This Playbook deploys a lb vhost configuration
+#
+#  Usage :
+#           ansible-playbook playbooks/deploy_tcp_vhost.yml -e"conf=myconf reload=yes datacenter=home"
+#
+######################################################################################################
+- name: Install a TCP haproxy configuration
+  hosts: lb:&{{ datacenter }}
+  become: yes
+  become_user: root
+  vars_files:
+    - "vars/{{ conf }}.yml"
+    - "vars/default.yml"
+
+  pre_tasks:
+    - shell: echo 'starting install for {{ conf }}'
+  roles:
+    - { role: deploy_tcp_vhost }
+    - { role: reload_lb, when reload == 'yes' or reload == 'all' or reload == 'ip' or reload == 'proxy' }
+
+  tasks:
+    - shell: echo 'roles done'
+
+  post_tasks:
+    - shell: echo 'Install done'
+

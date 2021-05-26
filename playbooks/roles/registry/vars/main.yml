@@ -1,0 +1,5 @@
+---
+registry_path : /var/lib/registry
+registry_hostname: registry.diehard.net
+registry_port: 5000
+gen_cert: 'no'

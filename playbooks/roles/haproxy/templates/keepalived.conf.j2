@@ -1,0 +1,54 @@
+global_defs {
+        router_id {{ inventory_hostname }} #Unique name of this Load Balancer
+        enable_script_security
+	script_user root
+}
+
+vrrp_script check_haproxy {
+        script "/usr/bin/killall -0 haproxy" #make sure haproxy is running
+        interval 1                  #check every 1 seconds
+        fall 2
+        rise 2
+}
+
+vrrp_sync_group VI_lb1 {
+        group {
+          VI_intra
+          VI_lan
+        }
+}
+
+vrrp_instance VI_intra {
+        state {{ vrrp_type }}
+        interface {{ intranet_iface }}
+        virtual_router_id 20
+        priority {{ vrrp_prio }}
+        advert_int 1
+        nopreempt
+
+        include /etc/keepalived/ip_intranet.conf
+
+        track_script {
+                check_haproxy
+        }
+
+        track_interface {
+                {{ lan_iface }}
+        }
+}
+
+vrrp_instance VI_lan {
+        state {{ vrrp_type }}
+        interface {{ lan_iface }}
+        virtual_router_id 30
+        priority {{ vrrp_prio }}
+        advert_int 1
+        nopreempt
+
+        include /etc/keepalived/ip_lan.conf
+
+        track_interface {
+                {{ intranet_iface }}
+        }
+}
+

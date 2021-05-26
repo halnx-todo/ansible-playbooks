@@ -1,0 +1,24 @@
+---
+######################################################################################################
+#
+# This Playbook reloads a lb configuration
+# use : reload=yes or reload=all or reload=ip or reload=haproxy
+#     ansible-plaubook playbooks/reload_lb -e"reload=yes datacenter=home"
+#
+
+######################################################################################################
+- hosts: lb:&{{ datacenter }}
+  user: deployer
+  sudo: no
+
+  pre_tasks:
+    - shell: echo 'starting install'
+  roles:
+    - { role: reload_lb }
+
+  tasks:
+    - shell: echo 'roles done'
+
+  post_tasks:
+    - shell: echo 'Install done'
+

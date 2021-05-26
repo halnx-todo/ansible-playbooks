@@ -1,0 +1,143 @@
+user  www-data;
+
+# This number should be, at maximum, the number of CPU cores on your system. 
+# (since nginx doesn't benefit from more than one worker per CPU.)
+worker_processes  4;
+
+# Number of file descriptors used for Nginx. This is set in the OS with 'ulimit -n 200000'
+# or using /etc/security/limits.conf
+worker_rlimit_nofile 20000;
+
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections  10000;
+    multi_accept on;
+    use epoll;
+}
+
+
+http {
+
+    server_names_hash_max_size 128;
+    server_names_hash_bucket_size 128;
+
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    sendfile        on;
+    directio        8m;
+    tcp_nopush      on;
+    tcp_nodelay     on;
+    keepalive_timeout  20s;
+    #keepalive_timeout 2 2; 
+    types_hash_max_size 2048;
+    server_tokens off;
+    gzip  on;
+    gzip_disable "msie6";
+
+    # allow the server to close the connection after a client stops responding. Frees up socket-associated memory.
+    reset_timedout_connection on;
+    # send the client a "request timed out" if the body is not loaded by this time. Default 60.
+    client_body_timeout 10;
+    client_header_timeout 10;
+    # If the client stops reading data, free up the stale client connection after this much time. Default 60.
+    send_timeout 8;
+
+    real_ip_header X-Forwarded-For;
+    set_real_ip_from 10.0.0.0/8;
+
+    access_log {{ data_dir }}/nginx/logs/access.log;
+    error_log {{ data_dir }}/nginx/logs/error.log;
+
+    # cache open files and errors info (not files)
+    open_file_cache max=200000 inactive=20s; 
+    open_file_cache_valid 30s; 
+    open_file_cache_min_uses 2; 
+    open_file_cache_errors on;
+
+    # rate limit connexions per sec
+    limit_conn_zone $first_http_x_forwarded_for zone=addr:50m;
+    limit_conn_log_level error;
+    limit_conn_status 509;
+
+    # rate limit requests per sec
+    # limit to 4 req per sec based on the x-forwarded IP
+    # override this in every vhost by using limit_req zone=one burst=6; in a location block for a 6 req/s
+    limit_req_log_level error;
+    limit_req_status 509;
+    limit_req_zone $last_http_x_forwarded_for zone=reqpers:50m rate=4r/s;
+
+    # log format for x-forwarded-for
+    log_format main '$remote_addr - $remote_user [$time_local] '
+        '"$request" $status $body_bytes_sent "$http_referer" '
+        '"$http_user_agent" "$http_x_forwarded_for"' ;
+
+    # log format in JSON format - to be used with logstash
+    log_format logstash_json '{ "@timestamp": "$time_iso8601", '
+                         '"@fields": { '
+                         '"remote_addr": "$remote_addr", '
+                         '"http_x_forwarded_for": "$http_x_forwarded_for", '
+                         '"last_http_x_forwarded_for": "$last_http_x_forwarded_for", '
+                         '"first_http_x_forwarded_for": "$first_http_x_forwarded_for", '
+                         '"host": "$host", '
+                         '"remote_user": "$remote_user", '
+                         '"upstream_cache_status": "$upstream_cache_status", '
+                         '"upstream_response_time": "$upstream_response_time", '
+                         '"upstream_status": "$upstream_status", '
+                         '"body_bytes_sent": "$body_bytes_sent", '
+                         '"bytes_sent": "$bytes_sent", '
+                         '"request_length": "$request_length", '
+                         '"request_time": "$request_time", '
+                         '"status": "$status", '
+                         '"uri": "$uri", '
+                         '"request": "$request", '
+                         '"scheme": "$scheme", '
+                         '"server_protocol": "$server_protocol", '
+                         '"request_method": "$request_method", '
+                         '"request_completion": "$request_completion", '
+                         '"connection": "$connection", '
+                         '"connection_requests": "$connection_requests", '
+                         '"http_referrer": "$sent_http_http_referer", '
+                         '"content_length": "$sent_http_content_length", '
+                         '"content_type": "$sent_http_content_type", '
+                         '"gzip_ratio": "$gzip_ratio", '
+                         '"environment": "$env", '
+                         '"application": "$application", '
+                         '"http_user_agent": "$http_user_agent" } }';
+
+    ##
+    # Virtual Host Configs
+    ##
+
+    server {
+      listen          localhost:4888;
+      server_name     localhost;
+      root            /opt/data/nginx/htdocs;
+
+      # define some variables used in the json logs
+      set $type 'nginx';
+      set $environment 'nginx';
+      set $application 'nginx';
+      set $last_http_x_forwarded_for "";
+      if ($http_x_forwarded_for ~ "(\d+\.\d+\.\d+\.\d+)$") {
+        set $last_http_x_forwarded_for $1;
+      }
+      set $first_http_x_forwarded_for "";
+      if ($http_x_forwarded_for ~ "^(\d+\.\d+\.\d+\.\d+)") {
+        set $first_http_x_forwarded_for $1;
+      }
+
+      # configure server status
+      location /nginx_status {
+          stub_status on;
+          access_log   off;
+          allow 127.0.0.1;
+          deny all;
+      }
+    }
+
+    include conf.d/*.conf;
+    include sites-enabled/*.conf;
+
+}

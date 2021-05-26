@@ -1,0 +1,63 @@
+#
+# prepare registry installation
+#
+#
+- name: 'Create directories if needed'
+  file:
+    path: '{{ item }}'
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+  with_items:
+    - '{{ registry_path }}'
+    - /etc/docker/registry_certs
+
+- name: Generate an OpenSSL private key
+  openssl_privatekey:
+    path: '/etc/docker/registry_certs/{{ registry_hostname }}.key'
+    size: 4096
+    type: RSA
+    force: yes
+  when: gen_cert == 'yes'
+  tags:
+    - registry
+    - cert
+
+- name: Generate OpenSSL CSR
+  openssl_csr:
+    path: '/etc/docker/registry_certs/{{ registry_hostname }}.csr'
+    privatekey_path: '/etc/docker/registry_certs/{{ registry_hostname }}.key'
+    common_name: "{{ registry_hostname }}"
+  when: gen_cert == 'yes'
+  tags:
+    - registry
+    - cert
+
+- name: Generate a Self Signed OpenSSL certificate
+  openssl_certificate:
+    path: '/etc/docker/registry_certs/{{ registry_hostname }}.crt'
+    privatekey_path: '/etc/docker/registry_certs/{{ registry_hostname }}.key'
+    csr_path: '/etc/docker/registry_certs/{{ registry_hostname }}.csr'
+    provider: selfsigned
+  when: gen_cert == 'yes'
+  tags:
+    - registry
+    - cert
+
+- name: Start the registry
+  docker_container:
+    name: registry
+    image: registry:2
+    restart_policy: always
+    state: started
+    ports:
+      - '{{ registry_port }}:{{ registry_port }}'
+    volumes:
+      - /etc/docker/registry_certs:/certs
+      - '{{ registry_path }}:{{ registry_path }}'
+    env:
+      REGISTRY_HTTP_ADDR: '0.0.0.0:{{ registry_port }}'
+      REGISTRY_HTTP_TLS_CERTIFICATE: '/certs/{{ registry_hostname }}.crt'
+      REGISTRY_HTTP_TLS_KEY: '/certs/{{ registry_hostname }}.key' 
+      REGISTRY_STORAGE_DELETE_ENABLED: 'true'

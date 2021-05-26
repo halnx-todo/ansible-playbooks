@@ -1,0 +1,13 @@
+project_components:
+- component: k8s 
+  primary_hostname: registry.diehard.net
+  hostname:
+  - registry.diehard.net
+  http_port: 80
+  https_port: 443
+  openshift_platform: k8s
+  service_protocol: https
+  redirect_http: yes
+  deploy_lb_vhost: yes
+  lb_conf_name: docker-registry
+  auth: no

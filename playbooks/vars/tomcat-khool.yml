@@ -1,0 +1,12 @@
+git_repo:
+  name: 'khool'
+  repo: 'https://github.com/kanedafromparis/khool-tomcat-session.git'
+  version: '{{ release }}'
+  branch: 'master'
+  ssh_key_file: '/home/ansible/.ssh/id_rsa'
+dockerfile_path: src/main/k8s.manual/Dockerfile.withBuilder.manual
+build_name: "{{ component }}-{{ application }}:{{ release }}"
+build_strategy: dockerfile
+build_args:
+  arg1: value1
+  arg2: value2

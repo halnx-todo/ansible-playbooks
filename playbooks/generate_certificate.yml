@@ -1,0 +1,32 @@
+---
+######################################################################################################
+#
+# This Playbook deploys a lb vhost configuration
+#
+# Usage :
+#   self-signed example 
+#     ansible-playbook playbooks/generate_certificate.yml -e"domain=www.abc.com C=FR ST='Bretagne' L='Saint Herblain' O='ENI' OU='ENI' key_size=2048 subjectaltnameip='' subjectaltname=''" -v
+#
+#   FOR STAR certificate : the domain name must start with a ., certificate will be named star.<domain>.com.crt for domain *.domain.com
+#
+# to add a subject alt name
+# subjectaltnameip: IPs to add as subjectaltnames. ex: "192.168.0.1','192.169.3.4"
+######################################################################################################
+- hosts: localhost
+  user: deployer
+  become: no
+  #  sudo: no
+  vars_files:
+    - "vars/default.yml"
+
+  pre_tasks:
+    - shell: echo 'starting Certificate generation'
+  roles:
+    - { role: certificate }
+
+  tasks:
+    - shell: echo 'roles done'
+
+  post_tasks:
+    - shell: echo 'Generation done'
+

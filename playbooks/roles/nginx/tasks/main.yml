@@ -1,0 +1,107 @@
+---
+  #
+  # install nginx
+  #
+  # install the pre-compiled nginx with code changed 
+  - name :  "install needed libraries on the system"
+    apt:  
+      pkg: 
+      - nginx
+      - nginx-extras
+      update_cache: yes 
+      state: present 
+      force: yes
+    become: yes
+    become_user: root
+    tags:
+      - kernel
+      - nginx
+
+  - name: "create data directory for nginx"
+    file: 
+      path: "{{ data_dir }}/{{ item }}"
+      owner: "{{ deploy_user }}"
+      group: "{{ deploy_group }}" 
+      state: directory
+    with_items:
+      - nginx
+      - nginx/access
+      - nginx/health-check
+      - nginx/htdocs
+      - nginx/conf
+      - nginx/conf/sites-available
+      - nginx/conf/sites-enabled
+      - nginx/ssl
+      - nginx/logs
+    become: yes
+    become_user: root
+    tags: nginx
+
+  - name: "Copy none certs to nginx directory"
+    copy:
+      src: "{{ item }}"
+      dest: "{{ data_dir }}/nginx/ssl/{{ item }}"
+      owner: "{{ deploy_user }}"
+      group: "{{ deploy_group }}"
+      mode: 0660
+      force: yes
+    loop:
+      - "none.key"
+      - "none.crt"
+
+  - name: "push base nginx.conf file"
+    template: src="nginx.conf.j2"
+              dest="{{ data_dir }}/nginx/conf/nginx.conf"
+              force=yes 
+              backup=yes
+    notify: restart nginx
+    tags: 
+      - nginx
+      - nginx_config
+
+  - name: "change owner"
+    file:   
+      path: "{{ data_dir }}/nginx"
+      owner: "{{ deploy_user }}"
+      group: "{{ deploy_group }}"
+      recurse: yes
+      state: directory
+    become: yes
+    become_user: root
+    tags: nginx
+
+  - name: "Delete old /etc/nginx/sites-*"
+    file:
+      path: '/etc/nginx/{{ item }}'
+      state: absent
+    with_items:
+      - sites-available
+      - sites-enabled
+      - ssl
+      - nginx.conf
+    become: yes
+    become_user: root
+    tags:
+      - nginx
+      - nginx-extras
+
+
+  - name: "Create symlinks from /opt/data/apps/nginx/conf to /etc/nginx"
+    file:
+      path: '/etc/nginx/{{ item }}'
+      src: '{{ data_dir }}/nginx/conf/{{ item }}'
+      state: link
+      force : yes
+    with_items:
+      - sites-available
+      - sites-enabled
+      - nginx.conf
+    become: yes
+    become_user: root
+    tags:
+      - nginx
+      - nginx-extras
+
+  ##################################################################################################
+  # end of the play
+  #

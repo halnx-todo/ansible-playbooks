@@ -1,0 +1,8 @@
+zone "diehard.net" { 
+  type master; 
+  file "/etc/bind/db.diehard.net"; 
+  notify yes; 
+  allow-transfer { 
+    192.168.56.14; 
+  }; 
+}; 

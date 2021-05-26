@@ -1,0 +1,28 @@
+---
+# Reload
+- name: "Reload haproxy"
+  systemd:
+    name: haproxy
+    state: reloaded
+  become: yes
+  become_user: root
+  when: reload == 'yes' or reload == 'all' or reload == 'haproxy'
+  tags:
+    - lb_vhost
+    - lb_vhost-reload
+    - lb_vhost-reload-haproxy
+    - whitelist
+
+- name: "Reload vrrp"
+  systemd:
+    name: "keepalived"
+    state: reloaded
+  become: yes
+  become_user: root
+  when: reload == 'yes' or reload == 'all' or reload == 'ip'
+  tags:
+    - lb_vhost
+    - lb_vhost-reload
+    - lb_vhost-reload-vrrp
+    - whitelist
+

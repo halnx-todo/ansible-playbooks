@@ -1,0 +1,33 @@
+---
+# usage : ansible-playbook -v playbooks/manage_nfsha_volume.yml -e "pvname= pvsize=128M"
+#
+# pvname  : the name of the volume. keep empty to generate a new name with latest counter like pv-nfsha-00003.
+# pvsize     : size of the PV (K for kilobytes, M for megabytes, G for gigabytes, T for terabytes, P for petabytes or E for exabytes)
+# label      :
+#
+# Use case :
+#
+#     ansible-playbook -v playbooks/manage_nfsha_volumes.yml -e "pvname= pvsize=128M"
+#
+- name: "Create NFSHA Persistent volume on NFSHA production cluster (xfs)"
+  hosts: nfsha
+  user: ansible
+  become: yes
+  become_user: root
+  vars:
+    - base_dir: "/opt/data"
+    - app_dir: "{{ base_dir }}/apps" 
+    - src_dir: "{{ base_dir }}/src"
+    - data_dir: "{{ base_dir }}"
+    - master: "none"
+  pre_tasks:
+    - shell: echo 'starting install'
+      changed_when: False
+  roles:
+    - { role: nfsha_pv }
+  tasks:
+    - shell: echo 'roles done'
+      changed_when: False
+  post_tasks:
+    - shell: echo 'install done'
+      changed_when: False

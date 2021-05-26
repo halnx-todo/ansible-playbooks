@@ -1,0 +1,343 @@
+- name: Use official Vincent Bernat PPA repository for haproxy 2.2
+  apt_repository: 
+    repo: "ppa:vbernat/haproxy-2.2"
+    state: present
+  tags:
+    - haproxy
+    - lb
+
+- name: Install needed packages
+  apt: 
+   pkg:
+   - haproxy
+   - keepalived
+   - ipvsadm
+   - quagga
+   - dsniff
+   update_cache: yes
+   state: latest
+   force: yes
+  tags: 
+    - lb
+    - packages
+    - haproxy
+
+- name: Set ulimit for user haproxy
+  pam_limits: 
+    domain: "{{ item.domain }}" 
+    limit_type: "{{ item.limit_type }}" 
+    limit_item: "{{ item.limit_item }}" 
+    value: "{{ item.value }}" 
+    use_max: True
+  loop:
+    - { domain: haproxy, limit_type: soft, limit_item: nofile, value: 1000000 }
+    - { domain: haproxy, limit_type: hard, limit_item: nofile, value: 1000000 }
+  tags:
+    - lb
+    - haproxy
+    - ulimit
+
+
+# rp_filter to 2, allow a packet to come /be sent to another interface
+# nf_conntrack : on heavy load, default table is too small
+# nonlocal_bind: allow haproxy to listen on non local IPs
+# fs.file_max : unlimit number of sockets
+- name: Set various systctl values nf_conntrack table size, rp_filter...
+  sysctl: 
+    name: "{{ item.name }}" 
+    value: "{{ item.value }}" 
+    state: present
+    sysctl_file: /etc/sysctl.d/haproxy.conf
+    reload: yes
+  loop:
+    - { name: "net.netfilter.nf_conntrack_max", value: "524288" }
+    - { name: "net.ipv4.conf.all.rp_filter", value: "2" }
+    - { name: "net.ipv4.ip_nonlocal_bind", value: "1" }
+    - { name: "net.ipv4.ip_forward", value: "1" }
+    - { name: "fs.file-max", value: "2000000" }
+    - { name: "net.unix.max_dgram_qlen", value: "100" }
+  tags:
+    - lb
+    - sysctl
+
+- name: Set nf_conntrack hashsize
+  lineinfile: 
+    dest: "/etc/modprobe.d/nf_conntrack.conf"
+    regexp: "^options nf_conntrack hashsize="
+    line: "options nf_conntrack hashsize=131072"
+    create: yes
+  tags:
+    - lb
+    - sysctl
+ 
+- name: Create haproxy directories
+  file: 
+    path: "{{ item }}" 
+    state: directory 
+    owner: haproxy
+    group: haproxy 
+    mode: 0700
+  with_items:
+    - /etc/haproxy/conf.d
+    - /etc/haproxy/certs
+    - /etc/haproxy/errors
+    - /etc/haproxy/client_certs
+    - /etc/haproxy/whitelists
+  tags:
+    - lb
+    - haproxy
+
+- name: Copy haproxy configuration file
+  template: 
+   src: haproxy.cfg.j2 
+   dest: /etc/haproxy/conf.d/00-haproxy.cfg
+  tags:
+    - lb
+    - haproxy
+
+- name: Copy haproxy stats file
+  template: 
+    src: haproxy_stats.cfg.j2
+    dest: /etc/haproxy/conf.d/10-haproxy_stats.cfg
+  tags:
+    - lb
+    - haproxy
+
+- name: Generate first configuration file with all frontends ans backends
+  shell: cat conf.d/*.cfg > haproxy.cfg
+  args: 
+    executable: /usr/bin/bash
+    chdir: /etc/haproxy
+  tags:
+    - lb
+    - haproxy
+
+# Haproxy logs
+- name: Create haproxy log directory
+  file: 
+    path: "{{ haproxy_logdir }}"
+    owner: root 
+    group: syslog 
+    state: directory
+    mode: 0775
+  tags:
+    - lb
+    - haproxy
+    - rsyslog
+    - subvol
+
+# to move at the end      
+- name: Change some rights
+  file: 
+    path: "/etc/haproxy" 
+    recurse: yes 
+    owner: haproxy 
+    group: haproxy
+  tags:
+    - lb
+    - haproxy
+
+- name: Change default haproxy log directory"
+  lineinfile:
+    dest: /etc/rsyslog.d/49-haproxy.conf
+    regexp: .*/var/log/haproxy.log
+    line: "  /var/log/haproxy/haproxy.log"
+  tags:
+    - lb
+    - haproxy
+    - rsyslog
+
+- name: "Copy logrotate haproxy configuration file"
+  copy: src="haproxy_logrotate" dest="/etc/logrotate.d/haproxy"
+  tags:
+    - lb
+    - haproxy
+    - rsyslog
+
+- name: "Enable haproxy servicei with systemd"
+  systemd:
+    enabled: yes
+    state: reloaded
+    name: haproxy
+  tags:
+    - lb
+    - haproxy
+
+# Quagga
+- name: Copy quagga configuration files
+  template: src="quagga_{{ item }}.j2" dest="/etc/quagga/{{ item }}"
+  when: quagga 
+  with_items:
+    - daemons
+    - debian.conf
+    - zebra.conf
+    - ospfd.conf
+    - vtysh.conf
+  tags:
+    - lb
+    - quagga
+
+- name: Change quagga conf rights
+  file:
+    path: /etc/quagga
+    owner: quagga
+    group: quagga
+    recurse: yes
+  when: quagga
+  tags:
+    - lb
+    - quagga
+
+- name: Enable quagga service
+  systemd: 
+    name: "{{ item }}"
+    enabled: yes
+    state: restarted
+  when: quagga
+  with_items:
+   - zebra
+   - ospfd
+  tags:
+    - lb
+    - quagga
+
+# keepalived
+- name: Copy keepalived configuration
+  template: 
+    src: keepalived.conf.j2 
+    dest: /etc/keepalived/keepalived.conf
+  tags:
+    - lb
+    - keepalived
+
+- name: Copy ip list template 
+  template: 
+    src: keepalived_ip.conf.j2 
+    dest: /etc/keepalived/{{ item }}
+    force: no
+  with_items:
+    - ip_intranet.conf
+    - ip_lan.conf
+  tags:
+    - lb
+    - keepalived
+
+- name: Add Virtual Gateway IP to VRRP configuration file
+  lineinfile: 
+    dest: "/etc/keepalived/ip_lan.conf"
+    regexp: "{{ gw_vip }} dev {{ lan_iface }}"
+    line: "{{ gw_vip }} dev {{ lan_iface }}"
+    insertbefore: "}"
+  when: gw_vip is defined
+  tags:
+    - lb
+    - keepalived
+
+- name: Copy keepalived default file
+  template: src=keepalived_default.j2 dest=/etc/default/keepalived
+  tags:
+    - lb
+    - keepalived
+
+- name: Enable keepalived service
+  systemd:
+    name: keepalived 
+    enabled: yes
+    state: reloaded
+  tags:
+    - lb
+    - keepalived
+
+# Restart syslog
+- name: Reload rsyslogd
+  systemd: 
+    name: rsyslog 
+    state: restarted
+  tags:
+    - lb
+    - rsyslog
+
+# Firewall
+- name: Disable ipv6 in ufw
+  lineinfile: 
+    dest: /etc/default/ufw 
+    regexp: "^IPV6=" 
+    line: "IPV6=no"
+  tags:
+    - lb
+    - firewall
+
+- name: open ports 80 and 443 to public
+  ufw: 
+    rule: allow 
+    port: "{{ item }}"
+  with_items:
+    - "80"
+    - "443"
+  tags:
+    - lb
+    - firewall
+
+
+- name: Open port 9000 to infra
+  ufw: 
+    rule: allow 
+    port: "{{ item[0] }}" 
+    src: "{{ item[1] }}"
+  with_nested: 
+    - [ "9000" ]
+    - [ "192.168.56.0/24" ]
+  tags:
+    - lb
+    - firewall
+
+- name: Add forwarding rules for GW Internet Access
+  shell: chdir=/etc/ufw grep -q "\*nat" before.rules || sed -i '/\*filter/i \*nat\n:POSTROUTING ACCEPT [0:0]\n:PREROUTING ACCEPT [0:0]\n-A POSTROUTING -s {{ lan_network }}/{{ lan_netmask }} -o {{ intranet_iface }} -j MASQUERADE\nCOMMIT\n' before.rules
+  when: gw_vip is defined
+  tags:
+    - lb
+    - firewall
+
+- name: Allow forwarding in UFW 
+  lineinfile: 
+    dest: /etc/default/ufw 
+    regexp: "^DEFAULT_FORWARD_POLICY=" 
+    line: 'DEFAULT_FORWARD_POLICY="ACCEPT"'
+  when: gw_vip is defined
+  tags:
+    - lb
+    - firewall
+
+- name: Add multicast rules for VRRP
+  lineinfile: 
+    dest: /etc/ufw/before.rules 
+    line: "{{ item }}" 
+    insertafter: "# don't delete the 'COMMIT'"
+  with_items:
+    - "-A ufw-before-input -i {{ lan_iface }} -d 224.0.0.18 -j ACCEPT"
+    - "-A ufw-before-input -i {{ intranet_iface }} -d 224.0.0.18 -j ACCEPT"
+  tags:
+    - lb
+    - firewall
+
+- name: Add multicast rules for OSPF
+  lineinfile: 
+    dest: /etc/ufw/before.rules 
+    line: "{{ item }}" 
+    insertafter: "# don't delete the 'COMMIT'"
+  with_items:
+    - "-A ufw-before-input -i {{ lan_iface }} -d 224.0.0.5 -j ACCEPT"
+    - "-A ufw-before-input -i {{ intranet_iface }} -d 224.0.0.5 -j ACCEPT"
+    - "-A ufw-before-input -i {{ internet_iface }} -d 224.0.0.5 -j ACCEPT"
+  when: quagga
+  tags:
+    - lb
+    - firewall
+    - quagga
+
+- name: "Reload ufw Firewall"
+  ufw: 
+    state: reloaded
+  tags:
+    - lb
+    - firewall

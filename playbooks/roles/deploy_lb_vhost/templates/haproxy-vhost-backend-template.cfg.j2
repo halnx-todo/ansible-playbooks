@@ -1,0 +1,135 @@
+###########################################################################################
+# {{ item.0.lb_conf_name }} backend for {{ item.0.primary_hostname }}
+###########################################################################################
+{% set lb_conf = lb_confs[item.0.lb_conf_name] %}
+{% if item.0.component == "openshift" or item.0.component =="k8s" %}
+{% set env_name = item.0.openshift_platform ~ "_infra" %}
+{% else %}
+{% set env_name = item.0.component ~ "-" ~ env ~ "-" ~ application %}
+{% endif %}
+{% if htuser is not defined %}
+{% set htuser = default_htuser %}
+{% set htpasswd = default_htpasswd %}
+{% endif %}
+{% if item.0.lb_cookie_mode is defined %}
+{% set lb_cookie_mode = item.0.lb_cookie_mode %}
+{% else %}
+{% if lb_conf.lb_cookie_mode is not defined %}
+{% set lb_cookie_mode = 'app' %}
+{% else %}
+{% set lb_cookie_mode = lb_conf.lb_cookie_mode %}
+{% endif %}
+{% endif %}
+{% if item.0.lb_balance is defined %}
+{% set lb_balance = item.0.lb_balance %}
+{% else %}
+{% if lb_conf.lb_balance is not defined %}
+{% set lb_balance = 'roundrobin' %}
+{% else %}
+{% set lb_balance = lb_conf.lb_balance %}
+{% endif %}
+{% endif %}
+{% if item.0.lb_cookie_name is defined %}
+{% set lb_cookie_name = item.0.lb_cookie_name %}
+{% else %}
+{% if lb_conf.lb_cookie_name is not defined %}
+{% if lb_cookie_mode == "app" %}
+    {% set lb_cookie_name = "JSESSIONID" %}
+{% elif lb_cookie_mode == 'insert' %}
+    {% set lb_cookie_name = "SERVERID" %}
+{% endif%}
+{% else %} 
+{% set lb_cookie_name = lb_conf.lb_cookie_name %}
+{% endif %}
+{% endif %}
+{% if item.0.healthcheck_uri is defined %}
+{% set healthcheck_uri = item.0.healthcheck_uri %}
+{% elif lb_conf.healthcheck_uri is defined %}
+{% set healthcheck_uri = lb_conf.healthcheck_uri %}
+{% else %}
+{% set healthcheck_uri = '' %}
+{% endif %}
+{% if item.0.healthcheck_type is defined %}
+{% set healthcheck_type = item.0.healthcheck_type %}
+{% elif lb_conf.healthcheck_type is defined %}
+{% set healthcheck_type = lb_conf.healthcheck_type %}
+{% else %}
+{% set healthcheck_type = "string" %}
+{% endif %}
+{% if item.0.healthcheck_negate is defined %}
+{% set healthcheck_negate = item.0.healthcheck_negate %}
+{% elif lb_conf.healthcheck_negate is defined %}
+{% set healthcheck_negate = lb_conf.healthcheck_negate %}
+{% else %}
+{% set healthcheck_negate = "no" %}
+{% endif %}
+{% if item.0.expected_result is defined %}
+{% set expected_result = item.0.expected_result %}
+{% elif lb_conf.expected_result is defined %}
+{% set expected_result = lb_conf.expected_result %}
+{% else %}
+{% set expected_result = "OK" %}
+{% endif %}
+{% if item.0.auth and item.0.authlist is defined %}
+userlist userlist-{{ item.0.primary_hostname }}
+{% for user in userlists[item.0.authlist] %}
+  user {{ user.user }} password {{ user.password }}
+{% endfor %}
+{% endif %}
+
+backend backend-{{ item.0.primary_hostname }}
+  balance {{ lb_balance }}
+
+{% if lb_cookie_mode != 'none' %}
+  option redispatch
+{% endif %}
+{% if lb_balance == 'source' and lb_cookie_mode == 'none' %}
+  hash-type consistent
+{% endif %}
+{% if healthcheck_uri is defined and healthcheck_uri != '' %}
+  option tcp-check
+  tcp-check send GET\ {{ healthcheck_uri }}\ HTTP/1.1\r\nHost:\ {{ item.1 }}\r\n{% if item.0.auth %}Authorization:\ Basic\ {{ (htuser+":"+htpasswd) | b64encode }}\r\n{% endif %} 
+  tcp-check send \r\n
+{% if healthcheck_type == "status" or healthcheck_type == "rstatus" %}
+  tcp-check expect rstring HTTP/1.1\ {{ expected_result }}\ .* 
+{% else %}
+  tcp-check expect string HTTP/1.1\ 200\ OK
+{% endif %}
+{#% if healthcheck_type != "status" and healthcheck_type != "rstatus" %#}
+{% if healthcheck_type == "string" %}
+  tcp-check expect {% if healthcheck_negate == 'yes' %}!{% endif %} {{ healthcheck_type }} {{ expected_result }}
+{% endif %}
+{% endif %}
+{% if lb_cookie_mode == "app" %}
+  {% if item.0.redirect_http %}
+    cookie {{ lb_cookie_name }} prefix nocache secure httponly
+  {% else %}
+    cookie {{ lb_cookie_name }} prefix nocache
+  {% endif %}
+{% elif lb_cookie_mode == "insert" %}
+  {% if item.0.redirect_http %}
+    cookie {{ lb_cookie_name }} insert indirect nocache secure httponly
+  {% else %}
+    cookie {{ lb_cookie_name }} insert indirect nocache
+  {% endif %}
+{% endif %}
+{% if item.0.whitelist is defined and item.0.whitelist == "yes" %}
+  # whitelist
+  http-request deny unless { src -f /etc/haproxy/whitelists/{{ item.0.primary_hostname }}.list }
+{% endif %}
+{% if item.0.auth and item.0.authlist is defined %}
+  acl AuthOK_{{ item.0.primary_hostname }}  http_auth(userlist-{{ item.0.primary_hostname }})
+  http-request auth realm Authentication\ needed if !AuthOK_{{ item.0.primary_hostname }}
+{% endif %}
+
+{% if item.0.redirect_http %}
+  redirect scheme https code 301 if !{ ssl_fc }
+{% endif %}
+
+{% for backend_server in groups[env_name] %}
+  server {{ backend_server }} {{ backend_server }}:{% if (item.0.component == "openshift" or item.0.component == "k8s") and item.0.redirect_http == false %}{{ item.0.http_port }}{% else %}{{ item.0.https_port }}{% endif %}  weight 1 check inter 2s fall 2 rise 2 {% if (item.0.component == "openshift" or item.0.component == "k8s") and item.0.redirect_http == false %}{% else %}ssl{% endif %}{% if lb_cookie_mode != 'none' %} cookie {{ backend_server }}{% endif %} 
+{% endfor %}
+
+#------------------------------------------------------------------------------------------
+
+

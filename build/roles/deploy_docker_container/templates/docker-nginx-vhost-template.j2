@@ -1,0 +1,139 @@
+upstream backend_servers_{{ component }}-{{ vhost_name }} {
+	# for sticky
+	ip_hash ;
+{% for detail in docker_details %}
+        server {{ detail.NetworkSettings.IPAddress }}:{{ service_port }} max_fails=0; # {{ detail.Config.Hostname }} on {{ inventory_hostname }}
+{% endfor %}
+        keepalive 16;
+}
+
+{% for serveralias in project_components %}{% if serveralias.component == component %}
+
+server {
+
+  listen {% if serveralias.http_port is defined and serveralias.http_port != "" %}*:{{ serveralias.http_port }}; {% else %} *:8028;{% endif %}
+
+  listen {% if serveralias.https_port is defined and serveralias.https_port != "" %}*:{{ serveralias.https_port }} {% else %} *:8029{% endif %} ssl;
+
+  server_name {% for servername in serveralias.hostname %} {{ servername }}{% endfor %};
+
+  root            {{ application_path }}/var/htdocs/;
+  access_log      /opt/data/nginx/logs/{{ serveralias.hostname[0] }}.access.log logstash_json flush=1m buffer=32k;
+
+  underscores_in_headers on;
+
+  # add basic headers for security and XSS
+  add_header X-Frame-Options SAMEORIGIN;
+  add_header X-Content-Type-Options nosniff;
+  add_header X-XSS-Protection "1; mode=block";
+
+  # define some variables used in the json logs
+  set $environment '{{ env }}';
+  set $application '{{ application }}';
+  set $release '{{ release }}';
+
+  ssl_certificate {{ application_path }}/etc/ssl/{{ serveralias.hostname[0] }}.crt;
+  ssl_certificate_key {{ application_path }}/etc/ssl/{{ serveralias.hostname[0] }}.key;
+  keepalive_timeout   20s;
+
+  # enable forward secrecy
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers on;
+  ssl_session_cache shared:SSL:10m;
+  ssl_session_timeout 5m;
+  ssl_ciphers  'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
+  # Diffie-Hellman parameter for DHE ciphersuites, recommended 2048 bits
+  #ssl_dhparam {{ data_dir }}/nginx/conf/dhparam.pem;
+{# {% endif %} #}
+
+{% if allow_uploads == true %}
+  client_max_body_size {{ max_body_size }}M;
+  client_body_timeout 15;
+  client_header_timeout 15;
+{% endif %}
+
+  # configure server status
+  location /nginx_status {
+      stub_status on;
+      access_log   off;
+      allow 127.0.0.1;
+      deny all;
+  }
+
+  location / {
+{% if serveralias.cors is defined and serveralias.cors == "yes" %}
+      error_page 418 = @cors;
+      recursive_error_pages on;
+{% endif %}
+
+      # Add HSTS headers in HTTPS ONLY
+      set $hsts 0;
+      if ($scheme = "https") {
+        set $hsts 1;
+      }
+      if ($http_x_forwarded_proto = "https") {
+        set $hsts 1;
+      }
+      # add basic headers for security and XSS
+      if ($hsts = 1) {
+      add_header Strict-Transport-Security "max-age=31536000; includeSubdomains;";
+      add_header X-Frame-Options SAMEORIGIN;
+      add_header X-Content-Type-Options nosniff;
+      add_header X-XSS-Protection "1; mode=block";
+      }
+      if ($hsts = 0) {
+      add_header X-Frame-Options SAMEORIGIN;
+      add_header X-Content-Type-Options nosniff;
+      add_header X-XSS-Protection "1; mode=block";
+      }
+
+{% if serveralias.redirect_http == true %}
+      # force SSL
+      if ($http_x_forwarded_proto = "http") { return 301 https://$http_host$request_uri; }
+      if ($scheme = "http") { return 301 https://$http_host$request_uri; }
+
+{% endif %}
+
+{% if serveralias.cors is defined and serveralias.cors == "yes" %}
+  {% if serveralias.auth %}
+      # CORS
+      if ($request_method = OPTIONS){
+        return 418;
+      }
+  {% endif %}
+{% else %}
+  {% if serveralias.auth %}
+      # add authentication in front of site not yet in production
+      auth_basic "MyCompany - Restricted access";
+      auth_basic_user_file {{ application_path }}/etc/htpasswd;
+  {% endif %}
+{% endif %}
+
+      proxy_pass              {{ service_protocol }}://backend_servers_{{ component }}-{{ vhost_name }};
+      proxy_set_header        Host $http_host;
+      proxy_set_header        X-Real-IP  $remote_addr;
+      real_ip_header X-Real-IP;
+
+      proxy_set_header        X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header        X-Forwarded-Proto $scheme;
+
+      add_header X-Frame-Options SAMEORIGIN;
+      add_header X-Content-Type-Options nosniff;
+      add_header X-XSS-Protection "1; mode=block";
+      # For websockets
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_http_version 1.1;
+  }
+
+  {% if dont_manage_5xx is not defined or (dont_manage_5xx is defined and dont_manage_5xx != "yes") %}
+  # redirect server error default pages to the static page /50x.html
+  error_page 500 501 502 504 /50x.html;
+  location = /50x.html {
+    root {{ application_path }}/var/htdocs;
+  }
+  {% endif %}
+
+}
+  
+{% endif %}{% endfor %}

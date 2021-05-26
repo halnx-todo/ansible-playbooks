@@ -1,0 +1,29 @@
+---
+######################################################################################################
+#
+# This Playbook deletes a vhost in load balancer
+#
+######################################################################################################
+- name: Delete a HTTP(S) haproxy configuration
+  hosts: lb:&{{ datacenter }}
+  vars:
+    - base_dir: "/opt/data" # base installation dir, usualy /opt/data - will be moved to global config soon
+    - data_dir: "/opt/data" # where to put the applications data (healthcheck, db files...) 
+    - src_dir:  "{{ base_dir }}/src"
+    - env_name: "{{ env }}-{{ application }}"
+  vars_files:
+    - "vars/default.yml"
+    - "vars/lb_confs.yml" # load the lb configuration defs
+    - "vars/{{ env }}-{{ application }}.yml" # load the most specific vars, like TCP ports
+
+  pre_tasks:
+    - shell: echo 'starting uninstall'
+  roles:
+    - { role: delete_lb_vhost }
+    - { role: reload_lb, when reload == 'yes' or reload == 'all' or reload == 'ip' or reload == 'haproxy' }
+  tasks:
+    - shell: echo 'roles done'
+
+  post_tasks:
+    - shell: echo 'Uninstall done'
+

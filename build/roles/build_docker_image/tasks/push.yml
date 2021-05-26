@@ -1,0 +1,30 @@
+---
+
+# Tag images
+- name: "Tag image to all registries"
+  docker_image: 
+    name: "{{ docker_registry }}/{{ build_name }}"
+    repository: "{{ item }}/{{ build_name }}"
+  loop: "{{ docker_registries | flatten(levels=1) }}"
+  tags:
+    - push
+
+# Push images
+- name: "Push image to all registries"
+  docker_image: 
+    name: "{{ item }}/{{ build_name }}"
+    push: yes
+  loop: "{{ docker_registries | flatten(levels=1) }}"
+  tags:
+    - push
+
+# remove local build temp images
+- name: "Remove local build temp images"
+  docker_image:
+    name: "{{ item }}/{{ build_name }}"
+    state: absent
+  loop: "{{ docker_registries | flatten(levels=1) }}"
+  #  with_items: docker_registries
+  tags:
+    - build
+    - push

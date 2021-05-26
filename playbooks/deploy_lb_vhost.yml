@@ -1,0 +1,37 @@
+---
+######################################################################################################
+#
+# This Playbook deploys a lb vhost configuration
+#
+# Usage :
+#         ansible-playbook playbooks/deploy_lb_vhost.yml -e"component=nginx env=production application=static reload=yes datacenter=home" -v 
+#
+######################################################################################################
+- name: Install a HTTP(S) haproxy configuration
+  hosts: lb:&{{datacenter}}
+  vars:
+    - base_dir: "/opt/data" 
+    - data_dir: "/opt/data"
+    - src_dir:  "{{ base_dir }}/src"
+    - lb_cookie_mode: "none"
+    - lb_bind_ip: []
+    - ssl_directory: /opt/data/ssl
+  vars_files:
+    - ["vars/default.yml"]
+    - ["vars/lb_confs.yml", "vars/default.yml"]
+    - ["vars/{{ component }}-{{ env }}.yml", "vars/default.yml"]
+    - ["vars/{{ application }}.yml", "vars/default.yml"]
+    - ["vars/{{ env }}-{{ application }}.yml", "vars/default.yml"]
+
+  pre_tasks:
+    - debug: msg='starting install'
+  roles:
+    - { role: deploy_lb_vhost }
+    - { role: reload_lb, when reload == 'yes' or reload == 'all' or reload == 'ip' or reload == 'haproxy' }
+
+  tasks:
+    - debug: msg='roles done'
+
+  post_tasks:
+    - debug: msg='Install done'
+

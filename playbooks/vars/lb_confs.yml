@@ -1,0 +1,29 @@
+default_ciphers_list: 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:DHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA:DES-CBC3-SHA:!NULL:!aNULL:!RC4:!RC2:!MEDIUM:!LOW:!EXPORT:!DES:!MD5:!PSK:!3DES'
+
+userlists:
+  'default': [ { 'user': 'access', 'password': '$6$g548sqf$VvGTwwpc.Og6cBELN2rNqXChncXy8Amr4F92o74J5art/TE0E1/D2WHyiVBmn0QpZj2zop1gu2QoAFN2L.Klf.' } ]
+
+lb_confs: 
+  'mutualized-production': {
+    'lb_bind_ip': [ {'ip':'192.168.1.110','instance':'intranet'} ],
+    'lb_http_port': 80,
+    'lb_https_port': 443,
+    'lb_frontend_maxconn': 100,
+    'healthcheck_uri': / ,
+    'healthcheck_negate': no ,
+    'healthcheck_type': status,
+    'expected_result': 200,
+    'lb_cookie_mode:': none
+  }
+
+  'docker-registry': {
+    'lb_bind_ip': [ {'ip':'192.168.1.110','instance':'intranet'} ],
+    'lb_http_port': 8080,
+    'lb_https_port': 5000,
+    'lb_frontend_maxconn': 100,
+    'healthcheck_uri': /v2/ ,
+    'healthcheck_negate': no ,
+    'healthcheck_type': status,
+    'expected_result': 200,
+    'lb_cookie_mode:': none
+  }
