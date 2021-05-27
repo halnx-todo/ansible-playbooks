@@ -1,4 +1,0 @@
-git_repos:
-- { 'name': 'website', 'repo': 'https://github.com/usawa/website.git', 'version': '{{ release }}', 'branch': 'master'}
-
-service_port: 3000

@@ -1,6 +1,6 @@
 git_repo:
   name: 'eni-tomcat-todo'
-  repo: 'git@github.com:kanedafromparis/eni-tomcat-todo.git'
+  repo: 'git@github.com:halnx-todo/eni-tomcat-todo.git'
   version: '{{ release }}'
   ssh_key_file: '/home/ansible/.ssh/id_rsa'
 
