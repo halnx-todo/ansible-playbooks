@@ -1,0 +1,47 @@
+vhost_name: 'static-website'
+project_components: [
+  { 
+    component: 'nginx',
+    primary_hostname: 'static-website',
+    hostname:   ['static-website'],
+    http_port:  '8080',
+    https_port: '8443',
+    service_port: '80',
+    service_protocol: 'http',
+    redirect_http: no,
+    deploy_lb_vhost: yes,
+    lb_conf_name: 'mutualized-production',
+    auth: no,
+    docker_image: '{{ node_docker_registry }}',
+    docker_container: '{{ node_docker_container }}',
+    volumes: '{{ node_volumes }}',
+  }
+]
+
+node_docker_container:
+  count_per_host: 1
+  cpus: 0.5
+  memory: "128m"
+  uid: "0"
+  gid: "101"
+  env: "{{ node_docker_env }}"
+
+node_docker_registry:
+  login: no
+  name: "library/nginx"
+  registry_url: 'registry.hub.docker.com'
+  registry_login: test
+  registry_password: test
+  registry_email: 'sebastien.rohaut@gmail.com'
+  registry_check: no
+
+
+node_docker_env:
+  host: '{{ inventory_hostname }}'
+  component: '{{ component }}'
+  environment: '{{ env }}'
+  application: '{{ application }}'
+  release: '{{ release|default("0.0.0") }}'
+
+node_volumes: 
+  - { "type":"archive","archive_path":"/home/ansible/ansible/build/roles/deploy_docker_container/files/static-nginx/static.tgz", "local_path":"html","dest_path": "/usr/share/nginx/html" }

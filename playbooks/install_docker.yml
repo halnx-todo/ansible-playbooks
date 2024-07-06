@@ -1,9 +1,14 @@
+#
+# you can enforce ansible_architecture with -e "ansible_architecture=arm64"
+#
+# ansible-playbook -l tomcat-all-in-one  -KJ playbooks/install_docker.yml -e "ansible_architecture=arm64"
 ---
 - name: "install docker"
   hosts: docker
   #become_user: root
   become: yes
-  #vars:
+  vars:
+    - docker_registry: "registry.diehard.net:5000"
 
   pre_tasks:
     - shell: echo 'starting install'

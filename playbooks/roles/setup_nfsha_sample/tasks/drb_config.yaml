@@ -1,0 +1,141 @@
+---
+- name: "global_common.conf  template"
+  template: 
+    src: global_common.conf.j2 
+    dest: "/etc/drbd.d/global_common.conf"
+    backup: no
+    owner: root
+    group: root
+    mode: 0640
+  tags:
+    - drdb
+
+- name: "/etc/drbd.d/nfsha.res  template"
+  template:
+    src: nfsha.res.j2
+    dest: "/etc/drbd.d/nfsha.res"
+    backup: no
+    owner: root
+    group: root
+    mode: 0640
+  tags:
+    - drbd
+
+
+
+- name: "drbdadm status nfsha"
+  become: true
+  shell: "drbdadm status nfsha"
+  ignore_errors: false
+  register: test_md_exist
+  tags:
+    - nfs-ha
+    - drbd
+
+- name: "drbdadm create-md nfsha"
+  become: true
+  shell: "drbdadm create-md nfsha"
+  ignore_errors: false
+  register: output
+  when: '"not defined in your config" in test_md_exist.stderr'
+  tags:
+    - nfs-ha
+    
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined 
+
+- name: "drbdadm up nfsha"
+  become: true
+  shell: "drbdadm up nfsha"
+  ignore_errors: false
+  when: '"not defined in your config" in test_md_exist.stderr'
+  register: output
+  tags:
+    - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "drbdadm -- --overwrite-data-of-peer primary nfsha"
+  become: true
+  shell: "drbdadm -- --overwrite-data-of-peer primary nfsha"
+  ignore_errors: false
+  when: 
+    - nfsharole=="primary"
+    - '"not defined in your config" in test_md_exist.stderr'
+  register: output
+  tags:
+    - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: check cluster check
+  become: true
+  shell: "cat /proc/drbd | grep 'ds:UpToDate/UpToDate'"
+  register: test_cluster
+  until: '" ds:UpToDate/UpToDate " in test_cluster.stdout'
+  retries: 5
+  delay: 10
+
+- name: "Unmount a mounted volume {{ raid_5_mount_path }}"
+  ansible.posix.mount:
+    path: "{{ raid_5_mount_path }}"
+    state: "unmounted"
+  tags:
+    - nfsha
+
+- name: "Unmount a mounted volume {{ nfsha_disk_mount_path }}"
+  ansible.posix.mount:
+    path: "{{ nfsha_disk_mount_path }}"
+    state: "unmounted"
+  tags:
+    - lvm
+    - nfsha
+
+- name: Create a xfs filesystem on /dev/drbd0
+  when: 
+    - nfsharole=="primary"
+  community.general.filesystem:
+    fstype: xfs
+    dev: /dev/drbd0
+
+- name: "create directory {{ nfsha_disk_mount_path }} "
+  when: 
+    - nfsharole=="primary"
+  ansible.builtin.file:
+    path: "{{ nfsha_disk_mount_path }}"
+    state: "directory"
+    mode: u=rwX,g=rX,o=rX
+  tags:
+    - nfsha
+
+- name: "mount a mounted volume {{ nfsha_disk_mount_path }}"
+  when: 
+    - nfsharole=="primary"
+  ansible.posix.mount:
+    path: "{{ nfsha_disk_mount_path }}"
+    src: /dev/drbd0
+    fstype: xfs
+    state: "mounted"
+  tags:
+    - nfsha
+
+- name: "create directory {{ nfsha_disk_mount_path }}/export"
+  when: 
+    - nfsharole=="primary"
+  ansible.builtin.file:
+    path: "{{ nfsha_disk_mount_path }}/exports"
+    state: "directory"
+    mode: u=rwX,g=rX,o=rX
+  tags:
+    - nfsha
+
+
+

@@ -4,7 +4,8 @@
 #
 #    ansible-playbook build/deploy_docker_container.yml -e "component=nginx  env=production application=static release=0.1.16"
 #
-- hosts: "{{ hostlist }}"
+- hosts: 
+   - tomcat_production_eni_todo
   serial: 1
   vars:
     - hostlist: "{{ component }}-{{ env }}-{{ application }}"

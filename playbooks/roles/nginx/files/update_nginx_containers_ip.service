@@ -1,0 +1,11 @@
+[Unit]
+Description=Update nginx upstream backends with containers IP 
+After=docker.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/sleep 2 
+ExecStart=/etc/init.d/update_nginx_containers_ip.sh
+[Install]
+WantedBy=multi-user.target
+

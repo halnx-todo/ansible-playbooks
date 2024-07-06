@@ -1,0 +1,34 @@
+log syslog informational
+hostname {{ inventory_hostname }}
+!
+interface lo
+interface {{ lan_iface }}
+ ipv6 nd suppress-ra
+!
+interface {{ internet_iface }}
+ ip address {{ internet_ip }}/{{ internet_netmask }}
+ ipv6 nd suppress-ra
+!
+interface lo
+!
+router ospf
+ ospf router-id {{ internet_ip }}
+ redistribute kernel route-map Filter-Private
+ redistribute connected route-map Filter-Private
+!
+! Configure areas based on exposed networks,
+! areas must be set based on other routers
+!
+ network {{ internet_network }}/{{ internet_netmask }} area 0.0.0.1
+ network {{ internal_ip }}/32 area 0.0.0.0
+!
+! Put here list of public IPs and subnets
+!
+ip prefix-list Public-Net seq 5 permit 171.18.94.0/25 ge 32
+ip prefix-list Public-Net seq 10 permit 171.56.18.0/24 ge 32
+!
+route-map Filter-Private permit 10
+ match ip address prefix-list Public-Net
+!
+route-map Default_Adv permit 10
+ match ip address prefix-list RHI-host

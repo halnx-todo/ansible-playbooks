@@ -1,0 +1,66 @@
+FROM ubuntu:18.04
+MAINTAINER Sebastien Rohaut <sebastien.rohaut@gmail.com>
+
+RUN apt-key adv --recv-keys --keyserver keyserver.ubuntu.com C7917B12 ;\
+  apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install {% for package in packages_list %}{{ package }} {% endfor %}
+
+RUN locale-gen en_US.UTF-8 && dpkg-reconfigure locales
+
+#{% if build_variables_app.stat.exists == true and supervisord_app is defined %}
+#{% if vars_to_export_in_env is defined %}
+#{% for app_item in supervisord_app %}
+#RUN ln -s {{ base_dir }}/share/supervisord-app-{{ app_item.program }}.ini {{ app_dir }}/supervisord/etc/supervisord.d/supervisord-app-{{ app_item.program }}.ini
+#{% endfor %}
+#{% else %}
+#ADD supervisord/* {{ app_dir }}/supervisord/etc/supervisord.d/
+#{% endif %}
+#{% endif %}
+
+# Add application and some dirs
+ADD {{ application }} {{ base_dir }}/{{ application }}
+
+RUN apt-get update
+
+###########################################
+#
+# Begin Install by users 
+#
+###########################################
+
+{% if build_variables_app.stat.exists == true  %}  
+
+ {% if packages_software is defined %} 
+ RUN apt-get -y install {% for package in packages_software %}{{ package }} {% endfor %}
+ {% endif %}
+
+# Create 10001 user
+RUN echo "Setup of the default user ..." \
+ && useradd -u 10001 -r -g 0 -d {{ base_dir }}/{{ application }} -s /sbin/nologin -c "Default Application User" default 
+
+# Run user command to install dependencie
+WORKDIR {{ base_dir }}/{{ application }}
+
+ {% if run_cmd is defined %}
+  {% for run in run_cmd %} 
+    RUN {{ run }}
+  {% endfor %}
+ {% endif %}
+
+# Remove /tmp/npm-*
+RUN rm -rf /tmp/npm-* \
+ && chown -R 10001:0 {{ base_dir }}/{{ application }} \
+ && chmod -R ug+rwx {{ base_dir }}/{{ application }}
+
+###########################################
+#
+# End Install by users
+#
+###########################################
+
+{% endif %}
+
+EXPOSE {{ service_port }}
+
+USER default
+# start 
+CMD {{ start_command_line }}

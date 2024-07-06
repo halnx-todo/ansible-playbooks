@@ -1,0 +1,36 @@
+---
+# for requirement : ansible-galaxy collection install -r playbooks/requirements.yml
+# ansible-playbook -i etc/hosts playbooks/install_all_in_one.yml --ask-become-pass
+# ansible-playbook -i etc/hosts -JK playbooks/install_all_in_one.yml    -e "ansible_architecture=arm64"    -e "deploy_ssh_key=/home/ansible/.ssh/ixxxxx"    -e "eni_todo_repo_url=..."    -e "eni_todo_git_tag=...."
+
+- name: "install tomcat application all in one machine"
+  hosts: all_in_one 
+  #become_user: root
+  become: yes
+  vars:
+    - clean: "false"
+    - tomcat_version: "10.1.23"
+    - tomcat_checksum: "sha512:d2d65818e02b1a8b570a761d79bd32a2d578ce140ea0bd62d03aedc10a8c13cb203926e4d81fac0c54ba27e1f9ecbb4e4f09d50e33ea9ca4cdc6ed1848fa6292"
+    - update_cache: "false"
+    - tarname: "apache-tomcat"
+    - tomcat_home: "/opt"
+    - port80: "false"
+    - deploy_ssh_key: "/home/ansible/.ssh/id_eni_todo"
+    - eni_todo_repo_url: "git@github.com:kanedafromparis/eni-tomcat-todo.git"
+    - eni_todo_git_tag: "v24.04"
+    - mariadb_basename: "db_todo"
+    - mariadb_port: "3306"
+    - mariadb_servername: "localhost" # "mariadb"
+    - mariadb_username: "springuser"
+    - mariadb_passwd: "mypassword-quoor-uHoe7z"
+
+  pre_tasks:
+    - shell: echo 'starting install'
+  roles:
+    - { role: all-in-one }
+
+  tasks:
+    - shell: echo 'roles done'
+
+  post_tasks:
+    - shell: echo 'Install done'

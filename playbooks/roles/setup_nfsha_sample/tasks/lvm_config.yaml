@@ -1,0 +1,29 @@
+---
+- name: "Unmount a mounted volume {{ raid_5_mount_path }}"
+  ansible.posix.mount:
+    path: "{{ raid_5_mount_path }}"
+    state: "unmounted"
+  tags:
+    - nfsha
+
+- name: "Unmount a mounted volume {{ nfsha_disk_mount_path }}"
+  ansible.posix.mount:
+    path: "{{ nfsha_disk_mount_path }}"
+    state: "unmounted"
+  tags:
+    - lvm
+    - nfsha
+
+- name: Create or resize a volume group {{ vg_nfsha }} on top of {{ nfsha_disk }}.
+  community.general.lvg:
+    vg: vg_nfsha
+    pvs: "{{ nfsha_disk }}"
+
+- name: Create a logical volume the size of all remaining on {{ nfsha_disk }}
+  community.general.lvol:
+    vg: vg_nfsha
+    lv: lv_nfsha
+    pvs: "{{ nfsha_disk }}"
+    size: 16G
+    state: present
+

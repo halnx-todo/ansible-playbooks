@@ -1,0 +1,4 @@
+server = "https://{{ item.registry_name }}"
+[host."https://{{ item.registry_name }}:{{item.registry_port}}"]
+  capabilities = ["pull", "resolve", "push"]
+  skip_verify = true

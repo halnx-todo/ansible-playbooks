@@ -1,0 +1,65 @@
+---
+- name: Install packadge for install mariadb
+  apt:
+      pkg:
+        #- python3-pip
+        - mariadb-client
+        - mariadb-server
+        - mariadb-common
+      state: latest
+      update_cache: "{{ update_cache }}"
+
+- name: "DROP DATABASE IF EXISTS {{ mariadb_basename }}"
+  become: true
+  command: "mysql --skip-column-names --user=root --database=mysql --execute='DROP DATABASE IF EXISTS {{ mariadb_basename }};'"
+  register: output
+  when: clean == "true"
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined 
+
+
+- name: "CREATE DATABASE {{ mariadb_basename }};"
+  become: true
+  command: "mysql --skip-column-names --user=root --database=mysql --execute='CREATE DATABASE IF NOT EXISTS {{ mariadb_basename }};'"
+  register: output
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+#@Todo keep or not...
+- name: "GRANT ALL PRIVILEGES ON {{ mariadb_basename }}.* TO '{{ mariadb_username }}'@'localhost'IDENTIFIED BY 'mariadb_passwd';"
+  become: true
+  command: "mysql --skip-column-names --user=root --database=mysql --execute=\"GRANT ALL PRIVILEGES ON {{ mariadb_basename }}.* TO '{{ mariadb_username }}'@'localhost'IDENTIFIED BY '{{ mariadb_passwd }}' ;\""
+  register: output
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "GRANT ALL PRIVILEGES ON {{ mariadb_basename }}.* TO '{{ mariadb_username }}'@'192.168.56.%'IDENTIFIED BY 'mariadbpasswd';"
+  become: true
+  command: "mysql --skip-column-names --user=root --database=mysql --execute=\"GRANT ALL PRIVILEGES ON {{ mariadb_basename }}.* TO '{{ mariadb_username }}'@'192.168.56.%'IDENTIFIED BY '{{ mariadb_passwd }}';\""
+  register: output
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+
+
+#"DROP DATABASE IF EXISTS {{ mariadbbasename }};"
+#"CREATE DATABASE {{ mariadbbasename }};"
+#"CREATE USER {{ mariadbusername }}@127.0.0.1 IDENTIFIED BY '{{ mariadbpasswd }}';"
+#"CREATE USER {{ mariadbusername }}@127.0.0.1 IDENTIFIED BY '{{ mariadbpasswd }}';"
+#"CREATE USER {{ mariadbusername }}@localhost IDENTIFIED BY '{{ mariadbpasswd }}';"
+#"CREATE USER {{ mariadbusername }}@192.168.56.% IDENTIFIED BY '{{ mariadbpasswd }}';"
+#"GRANT ALL PRIVILEGES ON {{ mariadbbasename }}.* TO '{{ mariadbusername }}'@'192.168.56.%'IDENTIFIED BY '{{ mariadbpasswd }}' WITH GRANT OPTION;"
+
+

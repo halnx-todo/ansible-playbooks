@@ -8,32 +8,46 @@ node2 ansible_connection=ssh datacenter=home host_type=vm
 nfsha01 ansible_connection=ssh datacenter=home host_type=vm
 nfsha02 ansible_connection=ssh datacenter=home host_type=vm
 
+tomcat-all-in-one ansible_connection=ssh datacenter=home host_type=vm
+
 [all:vars]
 ntp=fr.pool.ntp.org
 timezone="Europe/Paris"
 
+[newvm]
+newone ansible_host=192.168.56.66
+
+[all_in_one]
+tomcat-all-in-one
+
+[docker]
+infra01
+infra02
+node1
+node2
+#tomcat-all-in-one
+
 [nfsha]
-nfsha01
-nfsha02
+nfsha01 nfsharole=primary ansible_host=192.168.56.10
+nfsha02 nfsharole=secondary ansible_host=192.168.56.11
 
 [nfsha:vars]
 nfs_vip=192.168.56.12
 
-
 [home]
-infra01
+# order is important for shutdown 
+k8s-cplane01
+k8s-cplane02
+k8s-cplane03
+k8s-worker01
+k8s-worker02
+k8s-worker03
+k8s-worker04
 infra02
 nfsha01
 nfsha02
-k8s_master01
-k8s_master02
-k8s_master03
-k8s_worker01
-k8s_worker02
-k8s_worker03
-k8s_worker04
-node1
-node2
+infra01
+
 
 [home:vars]
 lan_subnets=['192.168.56.0/24']
@@ -42,22 +56,27 @@ lan_subnets=['192.168.56.0/24']
 node1
 node2
 
-[docker]
+[node_frontend_production_website]
 node1
 node2
 
-[nginx-production-static]
+[nginx_production_static]
 node1
 node2
 
-[tomcat-production-enitodo]
+[tomcat_production_eni_todo]
 node1
 node2
 
-[k8s_masters]
-k8s-master01
-k8s-master02
-k8s-master03
+
+[nginx_frontend_production_static2]
+node1
+node2
+
+[k8s_cplanes]
+k8s-cplane01
+k8s-cplane02
+k8s-cplane03
 
 [k8s_workers]
 k8s-worker01
@@ -70,31 +89,34 @@ k8s-worker01
 k8s-worker02
 
 [k8s:children]
-k8s_masters
+k8s_cplanes
 k8s_workers
 
 [dns]
-infra01 dnsrole=master
-infra02 dnsrole=slave
+infra01 dnsrole=master ansible_host=192.168.56.13
+infra02 dnsrole=slave  ansible_host=192.168.56.14
 
 [lb]
-infra01 vrrp_prio=101 internet_ip=171.18.94.56
-infra02 vrrp_prio=51 internet_ip=171.18.94.60
+infra01 vrrp_prio=101 internet_ip=171.18.94.56 internal_ip=192.168.56.13
+infra02 vrrp_prio=51 internet_ip=171.18.94.60 internal_ip=192.168.56.14
 
 [registry]
 infra01
 
 [lb:vars]
 vrrp_type=BACKUP
-quagga=true
+ospf=true
 gw_vip=192.168.56.19
-lan_iface=enp0s8
+#lan_iface=eth1
+lan_iface=enp0s2
 lan_network=192.168.56.0
 lan_netmask=24
-intranet_iface=enp0s3
+#intranet_iface=eth0
+intranet_iface=enp0s1
 intranet_network=192.168.1.0
 intranet_netmask=24
-internet_iface=enp0s9
+#internet_iface=eth2
+internet_iface=enp0s3
 internet_network=171.18.94.0
 internet_netmask=25
 

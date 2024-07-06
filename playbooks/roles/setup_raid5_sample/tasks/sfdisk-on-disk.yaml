@@ -1,0 +1,157 @@
+---
+- name: Install packadge for sfdisk
+  apt:
+    pkg:
+      - fdisk
+      - mdadm
+      - xfsprogs
+      - xfsdump
+    state: latest
+    update_cache: "{{ update_cache }}"
+  tags:
+    - install
+    - fdisk
+    - mdadm
+
+- name: "create mount path {{ raid_5_mount_path }} "
+  ansible.builtin.file:
+    path: "{{ raid_5_mount_path }}"
+    state: "directory"
+    mode: u=rwX,g=rX,o=rX
+  ignore_errors: yes
+  tags:
+    - fdisk
+    - mdadm
+
+- name: "Unmount a mounted volume {{ raid_5_mount_path }}"
+  ansible.posix.mount:
+    path: "{{ raid_5_mount_path }}"
+    state: "unmounted"
+  tags:
+    - fsdisk
+    - mdadm
+
+- name: "stop aggregate {{ raid_5_aggregate }}"
+  become: true
+  shell: "mdadm --stop {{ raid_5_aggregate }}"
+  ignore_errors: yes
+
+- name: "remove aggregate {{ raid_5_aggregate }}"
+  become: true
+  shell: "mdadm --remove {{ raid_5_aggregate }}"
+  ignore_errors: yes
+  tags:
+    - mdadm
+
+- name: "fdisk template"
+  template: 
+    src: vd_.sdfisk.j2 
+    dest: "/etc/vd_.sdfisk"
+    backup: yes
+    owner: root
+    group: root
+    mode: 0640
+  tags:
+    - fdisk
+
+- name: "execute fdisk on {{ raid_5_disks + raid_5_disks_spare }}"
+  become: true
+  shell: "sfdisk {{ item }} < /etc/vd_.sdfisk"
+  register: output
+  loop: "{{ raid_5_disks + raid_5_disks_spare }}"
+  tags:
+    - fdisk
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+
+- name: Remove file (delete file)
+  ansible.builtin.file:
+    path: "/etc/vd_.sdfisk"
+    state: absent
+
+
+- name: Sleep for 5 seconds and continue with play
+  ansible.builtin.wait_for:
+    timeout: 5
+
+- name: "create raid 5 aggregate on {{ raid_5_aggregate  }}"
+  become: true
+  shell: "mdadm --create {{ raid_5_aggregate }} --level=raid5 --raid-devices={{ raid_5_disks | length }} {{ raid_5_disks | join('1 ') }}1 --spare-devices={{ raid_5_disks_spare | length }} {{ raid_5_disks_spare | join('1 ') }}1 -R"
+  register: output
+  # sometime there time issue to the create operation
+  ignore_errors: yes 
+  tags:
+    - fdisk
+    - mdadm
+
+- name: check aggregate check
+  become: true
+  shell: "mdadm --monitor mdadm --monitor --test --oneshot --syslog /dev/md0 2>&1 | grep \"TestMessage event detected\""
+  register: test_aggregate
+  failed_when: '"TestMessage event detected" not in test_aggregate.stdout'
+
+- name: "Create a xfs filesystem on {{ raid_5_aggregate }}"
+  community.general.filesystem:
+    fstype: xfs 
+    dev: "{{ raid_5_aggregate }}"
+
+- name: "Mount up device by {{ raid_5_mount_path }}"
+  ansible.posix.mount:
+    path: "{{ raid_5_mount_path }}"
+    src: "{{ raid_5_aggregate }}"
+    fstype: xfs
+      #opts: noatime
+    state: present
+
+- name: "get info for initramfs on {{ raid_5_aggregate  }}"
+  become: true
+  shell: "mdadm --detail --scan"
+  register: mdadm_detail_scan
+  tags:
+    - fdisk
+    - mdadm
+
+- name: "create directory /etc/mdadm/ "
+  ansible.builtin.file:
+    path: "/etc/mdadm/ "
+    state: "directory"
+    mode: u=rwX,g=rX,o=rX
+  tags:
+    - fdisk
+    - mdadm
+
+- name: "fdisk template"
+  template:
+    src: mdadm.conf.j2 
+    dest: "/etc/mdadm/mdadm.conf"
+    backup: yes
+    owner: root
+    group: root
+    mode: 0640
+  tags:
+    - fdisk
+    - mdadm
+
+- name: "update-initramfs -u"
+  become: true
+  shell: "update-initramfs -u"
+  register: output
+  tags:
+    - fdisk
+    - mdadm
+    - initramfs
+    
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: daemon-reload
+  become: true
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+

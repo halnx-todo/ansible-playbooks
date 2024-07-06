@@ -1,0 +1,22 @@
+---
+- name: Include create the nfs-ha
+  include_tasks: init_nfsha.yaml
+    #when: erase_disk_partition.user_input | bool  
+
+- name: Include create the pcs config
+  include_tasks: pcs_config.yaml
+    #when: erase_disk_partition.user_input | bool
+
+- name: Include create the lvm config
+  include_tasks: lvm_config.yaml
+    #when: erase_disk_partition.user_input | bool
+
+- name: Include create the drb
+  include_tasks: drb_config.yaml
+    #when: erase_disk_partition.user_input | bool
+    #
+    #
+- name: Include config the peacemaker for our nfs
+  when:
+    - nfsharole=="primary"
+  include_tasks: pcs_nfs_config.yaml

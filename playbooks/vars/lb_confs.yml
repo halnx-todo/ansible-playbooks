@@ -5,7 +5,7 @@ userlists:
 
 lb_confs: 
   'mutualized-production': {
-    'lb_bind_ip': [ {'ip':'192.168.1.110','instance':'intranet'} ],
+    'lb_bind_ip': [ {'ip':'192.168.1.110','instance':'intranet'}, {'ip':'192.168.1.111','instance':'intranet'} ],
     'lb_http_port': 80,
     'lb_https_port': 443,
     'lb_frontend_maxconn': 100,
@@ -18,7 +18,7 @@ lb_confs:
 
   'docker-registry': {
     'lb_bind_ip': [ {'ip':'192.168.1.110','instance':'intranet'} ],
-    'lb_http_port': 8080,
+    'lb_http_port': 443,
     'lb_https_port': 5000,
     'lb_frontend_maxconn': 100,
     'healthcheck_uri': /v2/ ,

@@ -21,7 +21,7 @@
   register: reboot_required_file
   stat: 
     path: /var/run/reboot-required 
-    get_md5: no
+    get_checksum: no
   tags:
     - upgrade
 
@@ -63,28 +63,33 @@
   tags:
     - time
 
-- name: Add an Apt signing key, uses whichever key is at the URL
-  apt_key:
-    url: "{{ item }}"
-    state: present
-  with_items:
-   - https://packages.cloud.google.com/apt/doc/apt-key.gpg
-   - https://download.docker.com/linux/ubuntu/gpg
+- name: Create apt keyrings directory if needed
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: 0755
+    owner: root
+    group: root
   tags:
     - repository
 
-- name: Get current ubuntu release
-  shell: lsb_release -cs
-  args:
-    executable: /usr/bin/bash
-  register: ubuntu_release
+- name: Add docker repository signing key
+  get_url:
+    url: "https://download.docker.com/linux/ubuntu/gpg"
+    dest: /etc/apt/keyrings/docker.asc
+    mode: 0644
+    force: true
+  tags:
+    - repository
 
 - name: Add docker repository
-  apt_repository:
-    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ubuntu_release.stdout }} stable"
+  ansible.builtin.apt_repository:
+    repo: "deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
     state: present
     filename: docker
-    
+  tags:
+    - repository 
+
 - name: Install necessary packages
   apt:
     pkg:
@@ -99,6 +104,9 @@
     - ca-certificates
     - docker-ce 
     - docker-ce-cli 
+    - containerd.io
+    - docker-buildx-plugin
+    - docker-compose-plugin
     - python3-docker
     - python3-pystemd
     - jq
@@ -106,6 +114,16 @@
     update_cache: yes
   tags:
     - packages
+
+- name: Determine available groups
+  getent:
+    database: group
+
+- name: Add additional groups to user
+  user: name="ansible" groups="{{item}}" append=yes
+  when: item in ansible_facts.getent_group
+  with_items: 
+      - docker
 
 - name: Create certs directory
   file:
@@ -117,6 +135,14 @@
   tags:
     - docker
 
+- name: check for registry certificate
+  stat:
+    path: '/etc/docker/registry_certs/registry.diehard.net.crt'
+  register: local_registry_diehard_net_crt
+  tags: 
+   - docker
+   - cert
+
 - name: Copy registry certificate
   copy:
     src: '/etc/docker/registry_certs/registry.diehard.net.crt'
@@ -124,6 +150,7 @@
     mode: 0640
     owner: root
     group: root
+  when: local_registry_diehard_net_crt.stat.exists and local_registry_diehard_net_crt.stat.isreg
   tags:
     - docker
     - cert
@@ -139,46 +166,14 @@
     - docker
  
 - name: Configure docker daemon for systemd and overlay (2/2)
-  copy:
-    src: docker_daemon.json
+  template:
+    src: docker_daemon.json.j2
     dest: /etc/docker/daemon.json
     mode: 0644
     owner: root
     group: root
   tags:
     - docker
-
-- name: Copy nginx configuration update script for new IPs
-  copy:
-    src: update_nginx_containers_ip.py
-    dest: /etc/init.d/update_nginx_containers_ip.py
-    mode: 0755
-    owner: root
-    group: root
-  tags:
-    - docker
-    - service
-
-- name: Copy systemd service unit file
-  copy:
-    src: update_nginx_containers_ip.service
-    dest: /etc/systemd/system/update_nginx_containers_ip.service
-    mode: 0644
-    owner: root
-    group: root
-  tags:
-    - docker
-    - service
-
-- name: Activate systemd service unit file
-  systemd:
-    state: started
-    enabled: yes
-    name: update_nginx_containers_ip
-    daemon_reload: yes
-  tags:
-    - docker
-    - service
     
 - name: "reload systemd"
   systemd:

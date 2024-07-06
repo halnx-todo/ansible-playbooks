@@ -1,0 +1,68 @@
+- name: "open firewall for mariadb (3306) port for internet"
+  ufw: 
+    rule: allow 
+    to_port: "3306"
+    proto: tcp
+  become_user: root
+  become: yes
+  tags:
+    - mariadb
+    - firewall
+
+- name: Replace a localhost entry with our own
+  ansible.builtin.lineinfile:
+    path: /etc/mysql/mariadb.conf.d/50-server.cnf
+    regexp: 'bind-address            = 127\.0\.0\.1'
+    line: 'bind-address            = 0.0.0.0'
+    owner: root
+    group: root
+    mode: u+rw,g+r,o+r
+
+
+- name: "REVOKE ALL PRIVILEGES ON {{ mariadb_basename }}.* FROM '{{ mariadb_username }}'@'192.168.56.%';"
+  become: true
+  command: "mysql --skip-column-names --user=root --database=mysql --execute=\"REVOKE ALL PRIVILEGES ON {{ mariadb_basename }}.* FROM '{{ mariadb_username }}'@'192.168.56.%';\""
+  register: output
+  tags:
+    - mariadb
+
+- name: "GRANT ALL PRIVILEGES ON {{ mariadb_basename }}.* TO '{{ mariadb_username }}'@'localhost'IDENTIFIED BY 'mariadbpasswd';"
+  become: true
+  command: "mysql --skip-column-names --user=root --database=mysql --execute=\"GRANT ALL PRIVILEGES ON {{ mariadb_basename }}.* TO '{{ mariadb_username }}'@'localhost' IDENTIFIED BY '{{ mariadb_passwd }}';\""
+  register: output
+  tags:
+    - mariadb
+
+- name: "GRANT ALL PRIVILEGES ON {{ mariadb_basename }}.* TO '{{ mariadb_username }}'@'*'IDENTIFIED BY 'mariadbpasswd';"
+  become: true
+  command: "mysql --skip-column-names --user=root --database=mysql --execute=\"GRANT ALL PRIVILEGES ON {{ mariadb_basename }}.* TO '{{ mariadb_username }}'@'%' IDENTIFIED BY '{{ mariadb_passwd }}';FLUSH PRIVILEGES\""
+  register: output
+  tags:
+    - mariadb
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: Restart Tomcat service
+  ansible.builtin.systemd:
+    name: tomcat.service
+    state: stopped
+    enabled: no
+  tags:
+    - tomcat
+    - service
+
+- name: Restart mariadb
+  ansible.builtin.systemd:
+    name: mariadb.service
+    state: restarted
+    enabled: yes
+  tags:
+    - mariadb
+    - service
+
+
+
+

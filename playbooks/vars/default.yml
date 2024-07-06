@@ -12,3 +12,25 @@ build_args:
   arg1: value1
 dockerfile_path: .
 dockerfile_name: Dockerfile
+update_cache: "false"
+raid_5_disks :
+  - "/dev/vdb"
+  - "/dev/vdc"
+  - "/dev/vdd"
+raid_5_disks_spare:
+  - "/dev/vde"
+raid_5_aggregate: "/dev/md0"
+raid_5_mount_path: "/mnt/raid"
+nfsha_disk_mount_path: "/nfsha"
+nfsha_disk: "{{ raid_5_aggregate }}"
+nfs_ha_cluster_name: nfsha
+nfs_ha_primary_ip: 192.168.56.10
+nfs_ha_primary_name: nfsha01
+nfs_ha_secondary_ip: 192.168.56.11
+nfs_ha_secondary_name: nfsha02
+nfs_ha_vip_ip: 192.168.56.12
+generated_password: "nf5h4clu73r9"
+add_unsafe_registry: false
+tune_cluster_monitoring: false
+image_pause_version: 3.9
+node_status_update_frequency: "10s"

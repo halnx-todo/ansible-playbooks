@@ -29,6 +29,7 @@
     state: "directory"
     mode: 0750 
   delegate_to: localhost
+  become: true
   run_once: yes
 
 - name: "stat the domain key"

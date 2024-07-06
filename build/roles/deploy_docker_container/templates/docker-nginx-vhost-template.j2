@@ -1,8 +1,8 @@
 upstream backend_servers_{{ component }}-{{ vhost_name }} {
 	# for sticky
 	ip_hash ;
-{% for detail in docker_details %}
-        server {{ detail.NetworkSettings.IPAddress }}:{{ service_port }} max_fails=0; # {{ detail.Config.Hostname }} on {{ inventory_hostname }}
+{% for detail in docker_details.results %}
+        server {{ detail.container.NetworkSettings.IPAddress }}:{{ service_port }} max_fails=0; # {{ detail.container.Config.Hostname }} on {{ inventory_hostname }}
 {% endfor %}
         keepalive 16;
 }

@@ -1,0 +1,102 @@
+---
+- name: Install ufw
+  ansible.builtin.package:
+    name: 
+      - ufw
+      - net-tools
+    state: present
+
+- name: rm /etc/machine-id
+  ansible.builtin.file:
+    state: absent
+    path: "/etc/machine-id"
+
+- name: new machine id
+  ansible.builtin.shell: "systemd-machine-id-setup"
+
+- name: set-hostname {{ vmname }}
+  ansible.builtin.template: 
+    src:  hostname.j2 
+    dest: "/etc/hostname"
+    backup: yes
+    owner: root
+    group: root
+    mode: 0644
+  tags:
+    - newvmm
+
+- name: Set a hostname
+  ansible.builtin.hostname:
+    name: "{{ vmname }}"
+
+- name: Replace old hostname with new hostname (requires Ansible >= 2.4)
+  ansible.builtin.replace:
+    path: /etc/hosts
+    regexp: '(\s+)stem(\s+)'
+    replace: '\1{{ vmname }}\2'
+
+- name: open allow ssh to public
+  community.general.ufw: 
+    state: enabled
+    rule: allow 
+    port: "{{ item }}"
+  with_items:
+    - "22"
+  tags:
+    - firewall
+
+- name: rm '/etc/ssh/ssh_host*'
+  ansible.builtin.file:
+    state: absent
+    path: "{{ item }}"
+  loop: "{{ lookup('fileglob', '/etc/ssh/ssh_host*', wantlist=True) }}"
+
+
+- name: dpkg-reconfigure openssh-server
+  ansible.builtin.shell: "dpkg-reconfigure openssh-server"
+
+- name: "configure sshd"
+  ansible.builtin.template: 
+    src: sshd_config.j2 
+    dest: "/etc/ssh/sshd_config"
+    backup: yes
+    owner: root
+    group: root
+    mode: 0640
+  tags:
+    - newvmm
+
+- name: "edit netplan ethernets config"
+  ansible.builtin.template: 
+    src: 00-netplan-config.yaml.j2 
+    dest: "/etc/netplan/50-cloud-init.yaml"
+    backup: yes
+    owner: root
+    group: root
+    mode: 0600
+  tags:
+    - newvmm
+
+- name: Change link for '/etc/resolv.conf'
+  ansible.builtin.file:
+    path: /etc/resolv.conf
+    state: absent  
+
+- name: Create newlink for '/etc/resolv.conf'
+  ansible.builtin.file:
+    src: /run/systemd/resolve/resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+
+- name: Restart service ssh 
+  ansible.builtin.systemd_service:
+    state: restarted
+    enabled: true
+    daemon_reload: true
+    name: ssh
+
+- name: restart vm
+  ansible.builtin.reboot:
+    reboot_timeout: 5
+  ignore_errors: yes
+

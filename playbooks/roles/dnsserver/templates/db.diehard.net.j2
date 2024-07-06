@@ -23,7 +23,7 @@ nfsvip          IN   A    192.168.56.12
 infra01         IN   A    192.168.56.13 
 infra02         IN   A    192.168.56.14 
 ansible         IN   CNAME infra01 
-mutualized-vip	IN   A    192.168.1.110
+mutualized-vip	IN   CNAME ansible
 registry	IN   CNAME mutualized-vip
 eni-todo	IN   CNAME mutualized-vip
 todo		IN   CNAME mutualized-vip
@@ -31,9 +31,9 @@ todo		IN   CNAME mutualized-vip
 api.kube        IN   A    192.168.56.15 
 ; 16-19 reservation for VIPs 
 ; k8s cluster 
-k8s-master01    IN   A    192.168.56.20 
-k8s-master02    IN   A    192.168.56.21 
-k8s-master03    IN   A    192.168.56.22 
+k8s-cplane01    IN   A    192.168.56.20 
+k8s-cplane02    IN   A    192.168.56.21 
+k8s-cplane03    IN   A    192.168.56.22 
 k8s-worker01    IN   A    192.168.56.23 
 k8s-worker02    IN   A    192.168.56.24 
 k8s-worker03    IN   A    192.168.56.25 
@@ -45,5 +45,7 @@ node2           IN   A    192.168.56.31
 infra01-intra   IN   A    192.168.1.101 
 infra02-intra   IN   A    192.168.1.102 
 vip-gw          IN   A    192.168.56.19 
+;single host
+tomcat-all-in-one IN   A    192.168.56.70 
 
 

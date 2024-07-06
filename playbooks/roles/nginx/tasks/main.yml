@@ -6,6 +6,7 @@
   - name :  "install needed libraries on the system"
     apt:  
       pkg: 
+      - ufw
       - nginx
       - nginx-extras
       update_cache: yes 
@@ -101,6 +102,60 @@
     tags:
       - nginx
       - nginx-extras
+
+  - name: Copy nginx configuration update script for new IPs
+    become: true
+    become_user: root
+    copy:
+      src: update_nginx_containers_ip.sh
+      dest: /etc/init.d/update_nginx_containers_ip.sh
+      mode: 0755
+      owner: root
+      group: root
+    tags:
+      - docker
+      - service
+      - nginx
+    
+  - name: Copy systemd service unit file
+    become: true
+    become_user: root
+    copy:
+      src: update_nginx_containers_ip.service
+      dest: /etc/systemd/system/update_nginx_containers_ip.service
+      mode: 0644
+      owner: root
+      group: root
+    tags:
+      - docker
+      - service
+      - nginx
+
+  - name: "reload systemd"
+    become: true
+    become_user: root
+    systemd:
+      name: docker
+      enabled: yes
+      state: restarted
+      daemon_reload: yes
+    tags:
+      - docker
+      - service
+
+  - name: Activate systemd service unit file
+    become: true
+    become_user: root
+    systemd:
+      state: started
+      enabled: yes
+      name: update_nginx_containers_ip
+      daemon_reload: yes
+    tags:
+      - docker
+      - service
+      - nginx
+
 
   ##################################################################################################
   # end of the play

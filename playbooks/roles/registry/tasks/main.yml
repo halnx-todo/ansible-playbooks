@@ -29,6 +29,7 @@
     path: '/etc/docker/registry_certs/{{ registry_hostname }}.csr'
     privatekey_path: '/etc/docker/registry_certs/{{ registry_hostname }}.key'
     common_name: "{{ registry_hostname }}"
+    subject_alt_name: "DNS:{{ registry_hostname }}"
   when: gen_cert == 'yes'
   tags:
     - registry
@@ -39,6 +40,7 @@
     path: '/etc/docker/registry_certs/{{ registry_hostname }}.crt'
     privatekey_path: '/etc/docker/registry_certs/{{ registry_hostname }}.key'
     csr_path: '/etc/docker/registry_certs/{{ registry_hostname }}.csr'
+
     provider: selfsigned
   when: gen_cert == 'yes'
   tags:
@@ -61,3 +63,10 @@
       REGISTRY_HTTP_TLS_CERTIFICATE: '/certs/{{ registry_hostname }}.crt'
       REGISTRY_HTTP_TLS_KEY: '/certs/{{ registry_hostname }}.key' 
       REGISTRY_STORAGE_DELETE_ENABLED: 'true'
+
+- name: open ports 5000 to public (to be discuss)
+  ufw:
+    rule: allow
+    port: "5000"
+  tags:
+    - firewall

@@ -3,7 +3,8 @@
   hosts: dns 
   #become_user: root
   become: yes
-  #vars:
+  vars:
+    - use_vip: 'no'
 
   pre_tasks:
     - shell: echo 'starting install'

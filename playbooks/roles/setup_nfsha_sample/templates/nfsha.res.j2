@@ -1,0 +1,14 @@
+resource nfsha { 
+  volume 0 { 
+    device /dev/drbd0; 
+    disk /dev/vg_nfsha/lv_nfsha; 
+    meta-disk internal; 
+  } 
+  on {{ nfs_ha_primary_name }}  { 
+    address {{ nfs_ha_primary_ip }}:7788; 
+  } 
+  on {{ nfs_ha_secondary_name }} { 
+    address {{ nfs_ha_secondary_ip }}:7788; 
+  } 
+}
+

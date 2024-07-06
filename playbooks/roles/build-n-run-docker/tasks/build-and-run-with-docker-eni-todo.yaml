@@ -1,0 +1,24 @@
+---
+- name: Build image
+  shell: |
+    docker build -t="{{ docker_registry }}/{{ item.tag }}" \
+       --build-arg MULTIPART_LOCATION="{{ tomcat_home }}/tomcat/eni-todo-filestorage" \
+       --build-arg DB_DTB_JDBC_URL="jdbc:mariadb://{{ mariadb_servername }}:{{ mariadb_port }}/{{ mariadb_basename }}" \
+       --build-arg DB_DTB_USERNAME="{{ mariadb_username }}" \
+       --build-arg DB_DTB_PASSWORD="{{ mariadb_passwd }}" \
+       --target {{ item.target }} . 2>&1 |tee -a {{ tomcat_home }}/checkout/eni-tomcat-todo/docker-build-{{ ansible_date_time.iso8601_basic_short }}-{{ item.tag }}.log
+  args:
+    executable: /usr/bin/bash
+    chdir: "{{ tomcat_home }}/checkout/eni-tomcat-todo"
+  loop:
+   - { tag: "eni-todo:24.04-tomcat-mariadb-harcoded", target: eni-todo-tomcat-mariadb-harcoded }
+   - { tag: "eni-todo:24.04-tomcat-h2-env", target: eni-todo-tomcat-h2-env }
+   - { tag: "eni-todo:24.04-tomcat-mariadb-env", target: eni-todo-tomcat-mariadb-env }
+   - { tag: "eni-todo:24.04-tomcat-mariadb-kub", target: eni-todo-tomcat-mariadb-kub }
+   - { tag: "eni-todo:24.04-boot-h2-env", target: eni-todo-boot-h2-env }
+   - { tag: "eni-todo:24.04-todo-boot-mariadb-env", target: eni-todo-boot-mariadb-env }
+  register: build_output
+  ignore_errors: yes
+  tags:
+    - build
+

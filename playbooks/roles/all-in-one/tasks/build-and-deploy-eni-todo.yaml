@@ -1,0 +1,79 @@
+---
+- name: Install package for checkout
+  apt:
+      pkg:
+        - git
+      state: latest
+      update_cache: "{{ update_cache }}"
+
+- name: Create checkout directory
+  ansible.builtin.file:
+    path: "{{ tomcat_home }}/checkout"
+    state: directory
+    owner: ansible
+    group: ansible
+    recurse: yes
+    mode: u=rwX,g=r,o=r
+ 
+- name: copy deployment key id_eni_todo
+  ansible.builtin.copy:
+    remote_src: no
+    src: "{{ deploy_ssh_key }}"
+    dest: "{{ deploy_ssh_key }}"
+    mode: "a-rwx,u+rw"
+    owner: ansible
+    group: ansible
+    backup: no
+
+- name: Git checkout
+  become: true
+  become_user: ansible
+  git:
+    repo: "{{ eni_todo_repo_url }}" 
+    dest: "{{ tomcat_home }}/checkout/eni-tomcat-todo"
+    version: "{{ eni_todo_git_tag }}"
+    key_file: "{{ deploy_ssh_key }}"
+
+- name: Create checkout directory
+  ansible.builtin.file:
+    path: "{{ tomcat_home }}/checkout/eni-tomcat-todo/.m2"
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: u=rwX,g=rwX,o=r
+
+- name: maven package
+  become: true
+  become_user: ansible
+  command: "mvn package -P tomcat-mariadb -Dmaven.repo.local={{ tomcat_home }}/checkout/eni-tomcat-todo/.m2 -Dmariadbbasename={{ mariadb_basename }} -Dmariadbservername={{ mariadb_servername }} -Dmariadbusername={{ mariadb_username }} -Dmariadbpasswd={{ mariadb_passwd }} -Dmultipartlocation={{ tomcat_home }}/tomcat/eni-todo-filestorage"
+  args:
+    chdir: "{{ tomcat_home }}/checkout/eni-tomcat-todo"
+  register: output
+
+- name: copy eni-todo.war
+  become: true
+  ansible.builtin.copy:
+    remote_src: yes
+    src: "{{ tomcat_home }}/checkout/eni-tomcat-todo/target/eni-todo-tomcat-mariadb.war"
+    dest: "{{ tomcat_home }}/tomcat/webapps/eni-todo.war"
+    owner: tomcat
+    group: tomcat
+    mode: "0644"
+
+- name: Create checkout directory
+  ansible.builtin.file:
+    path: "{{ tomcat_home }}/tomcat/eni-todo-filestorage"
+    owner: tomcat
+    group: tomcat
+    mode: u=rwX,g=r,o=r
+    state: directory
+
+- name: set context.xml
+  ansible.builtin.debug:
+    msg: "todo"
+  
+- name: Restart Tomcat service
+  ansible.builtin.systemd:
+    name: tomcat.service
+    state: restarted
+    enabled: yes

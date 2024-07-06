@@ -1,19 +1,12 @@
-- name: Use official Vincent Bernat PPA repository for haproxy 2.2
-  apt_repository: 
-    repo: "ppa:vbernat/haproxy-2.2"
-    state: present
-  tags:
-    - haproxy
-    - lb
-
 - name: Install needed packages
   apt: 
    pkg:
    - haproxy
    - keepalived
    - ipvsadm
-   - quagga
+   - frr
    - dsniff
+   - syslog-ng
    update_cache: yes
    state: latest
    force: yes
@@ -117,7 +110,7 @@
   file: 
     path: "{{ haproxy_logdir }}"
     owner: root 
-    group: syslog 
+    group: root 
     state: directory
     mode: 0775
   tags:
@@ -163,43 +156,42 @@
     - lb
     - haproxy
 
-# Quagga
-- name: Copy quagga configuration files
-  template: src="quagga_{{ item }}.j2" dest="/etc/quagga/{{ item }}"
-  when: quagga 
+# FFRouting
+- name: Copy FFRouting configuration files
+  template: 
+    src: "frr_{{ item }}.j2" 
+    dest: "/etc/frr/{{ item }}"
+  when: ospf
   with_items:
     - daemons
-    - debian.conf
-    - zebra.conf
-    - ospfd.conf
-    - vtysh.conf
+    - frr.conf
   tags:
     - lb
-    - quagga
+    - ospf
 
-- name: Change quagga conf rights
+- name: Change FFRouter conf rights
   file:
-    path: /etc/quagga
-    owner: quagga
-    group: quagga
+    path: /etc/frr
+    owner: frr
+    group: frr
     recurse: yes
-  when: quagga
+  when: ospf
   tags:
     - lb
-    - quagga
+    - ospf
 
-- name: Enable quagga service
+- name: Enable FFRouter service
   systemd: 
-    name: "{{ item }}"
+    name: frr
     enabled: yes
     state: restarted
-  when: quagga
+  when: ospf
   with_items:
-   - zebra
-   - ospfd
+    - zebra
+    - ospfd
   tags:
     - lb
-    - quagga
+    - ospf
 
 # keepalived
 - name: Copy keepalived configuration
@@ -249,9 +241,9 @@
     - keepalived
 
 # Restart syslog
-- name: Reload rsyslogd
+- name: Reload syslog-ng
   systemd: 
-    name: rsyslog 
+    name: syslog-ng 
     state: restarted
   tags:
     - lb
@@ -329,11 +321,11 @@
     - "-A ufw-before-input -i {{ lan_iface }} -d 224.0.0.5 -j ACCEPT"
     - "-A ufw-before-input -i {{ intranet_iface }} -d 224.0.0.5 -j ACCEPT"
     - "-A ufw-before-input -i {{ internet_iface }} -d 224.0.0.5 -j ACCEPT"
-  when: quagga
+  when: ospf
   tags:
     - lb
     - firewall
-    - quagga
+    - ospf
 
 - name: "Reload ufw Firewall"
   ufw: 

@@ -1,0 +1,22 @@
+#
+# ansible-playbook playbooks/post_k8s_install.yml -e "tune_cluster_monitoring=true" -e "add_unsafe_registry=true"
+# add_unsafe_registry: false
+#
+---
+- name: "Post install k8s tuning"
+  become: yes
+  become_user: root
+  hosts: k8s
+  # serial: 1
+  vars:
+    - base_dir: "/opt/data"
+  vars_files:
+    - "vars/default.yml"
+  pre_tasks:
+    - shell: echo 'starting Post conf'
+  roles:
+    - { role: post_k8s_install }
+  tasks:
+    - shell: echo 'roles done'
+  post_tasks:
+    - shell: echo 'install done'

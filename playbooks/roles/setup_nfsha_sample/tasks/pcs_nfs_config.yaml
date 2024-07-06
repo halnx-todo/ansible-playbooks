@@ -1,0 +1,254 @@
+---
+- name: "pcs cluster stop {{ nfs_ha_secondary_name }}"
+  become: true
+  when:
+    - nfsharole=="primary"
+  shell: "pcs cluster stop {{ nfs_ha_secondary_name }} --force"
+  ignore_errors: true
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  when:
+    - nfsharole=="primary"
+  debug:
+    msg: " {{ output.stdout }}"
+
+- name: check for drbd
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs resource | grep drbd"
+  register: test_drbd
+
+- name: check for fs_nfsha
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs resource | grep fs_nfsha"
+  register: test_fs_nfsha
+
+- name: check for nfs-daemon
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs resource | grep nfs-daemon"
+  register: test_nfs_daemon
+
+- name: check for exportfs_nfsv4_root
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs resource | grep exportfs_nfsv4_root"
+  register: test_exportfs_nfsv4_root  
+
+- name: check for exportfs_nfsv4_root
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs resource | grep cluster-ip"
+  register: test_cluster_ip
+
+- name: check for drbd-clone constraint
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs constraint config | grep \"promote resource 'drbd-clone'\""
+  register: test_drbd_clone_constraint
+
+- name: check for INFINITY nfsha constraint 
+  become: true
+  when: nfsharole=="primary"
+  shell: "sudo pcs constraint config | grep \"resource 'nfsha'\" -A 2 | grep INFINITY"
+  register: test_infinity_nfsha_constraint
+
+- name: "pcs cluster cib drbd_cfg"
+  become: true
+  when:
+    - nfsharole=="primary"
+    - '"drbd" not in test_drbd.stdout'
+  shell: "pcs cluster cib drbd_cfg"
+  ignore_errors: true
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "pcs -f drbd_cfg resource create drbd ocf:linbit:drbd"
+  become: true
+  when:
+    - nfsharole=="primary"
+    - '"drbd" not in test_drbd.stdout'
+  shell: "pcs -f drbd_cfg resource create drbd ocf:linbit:drbd drbd_resource=nfsha op monitor interval=10s"
+  ignore_errors: true
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+  
+- name: "pcs -f drbd_cfg resource promotable drbd promoted-max=1"
+  become: true
+  when:
+    - nfsharole=="primary"
+    - '"drbd" not in test_drbd.stdout'
+  shell: "pcs -f drbd_cfg resource promotable drbd promoted-max=1 promoted-node-max=1 clone-max=2 clone-node-max=1 notify=true"
+  ignore_errors: true
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+  
+- name: "pcs -f drbd_cfg resource status"
+  become: true
+  when:
+    - nfsharole=="primary"
+      #- '"drbd" not in test_drbd.stdout'
+  shell: "pcs -f drbd_cfg resource status"
+  ignore_errors: true
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "pcs cluster cib-push drbd_cfg config"
+  become: true
+  when:
+    - nfsharole=="primary"
+      #- '"drbd" not in test_drbd.stdout'
+  shell: "pcs cluster cib-push drbd_cfg"
+  ignore_errors: true
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+  
+- name: "pcs resource create fs_nfsha ocf:heartbeat:Filesystem"
+  become: true
+  when:
+    - nfsharole=="primary"
+    - '"fs_nfsha" not in test_fs_nfsha.stdout'
+  shell: "pcs resource create fs_nfsha ocf:heartbeat:Filesystem device=/dev/drbd0 directory=/nfsha fstype=\"xfs\" options=uquota,pquota op monitor interval=\"10s\" --group nfsha"
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+  
+  
+- name: "pcs resource create nfs-daemon ocf:heartbeat:nfsserver"
+  become: true
+  when:
+    - nfsharole=="primary"
+    - '"nfs-daemon" not in test_nfs_daemon.stdout'
+  shell: "pcs resource create nfs-daemon ocf:heartbeat:nfsserver nfs_init_script=/etc/init.d/nfs-kernel-server  nfs_shared_infodir=/nfsha/nfsinfo nfs_no_notify=true --group nfsha "
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+  
+- name: "pcs resource create exportfs_nfsv4_root ocf:heartbeat:exportfs"
+  become: true
+  when:
+    - nfsharole=="primary"
+    - '"exportfs_nfsv4_root" not in test_exportfs_nfsv4_root.stdout'
+  shell: "pcs resource create exportfs_nfsv4_root ocf:heartbeat:exportfs fsid=0 directory=\"/nfsha/exports\" options=\"no_root_squash,rw,crossmnt,no_wdelay\" clientspec=\"*\" op monitor interval=\"30s\" --group nfsha"
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+  
+- name: "pcs resource create cluster-ip ocf:heartbeat:IPaddr2"
+  become: true
+  when:
+    - nfsharole=="primary"
+    - '"cluster-ip" not in test_cluster_ip.stdout'
+  shell: "pcs resource create cluster-ip ocf:heartbeat:IPaddr2 ip={{ nfs_ha_vip_ip }} cidr_netmask=24 op monitor interval=20s --group nfsha "
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "pcs constraint order promote drbd-clone then start nfsha"
+  become: true
+  when:
+    - nfsharole=="primary"
+    - '"promote resource" not in test_drbd_clone_constraint.stdout'
+      #- '"promote resource 'drbd-clone'" not in test_drbd_clone_constraint.stdout'
+  shell: "pcs constraint order promote drbd-clone then start nfsha"
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "pcs constraint colocation add nfsha with drbd-clone INFINITY"
+  become: true
+  when:
+    - nfsharole=="primary"
+    - '"INFINITY" not in test_infinity_nfsha_constraint.stdout'
+  shell: "pcs constraint colocation add nfsha with drbd-clone INFINITY"
+  register: output
+  tags:
+    - nfs-ha
+    - pcs
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "pcs cluster start {{ nfs_ha_secondary_name }}"
+  become: true
+  when:
+    - nfsharole=="primary"
+  shell: "pcs cluster start {{ nfs_ha_secondary_name }}"
+  ignore_errors: true
+  register: output
+  tags:
+    - nfs-ha
+    - pcs

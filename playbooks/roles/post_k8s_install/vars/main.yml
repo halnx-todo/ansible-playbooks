@@ -1,0 +1,3 @@
+---
+nginx_version: "1.15.8"
+nginx_extras: "0"

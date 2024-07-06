@@ -5,6 +5,7 @@
   docker_image: 
     name: "{{ docker_registry }}/{{ build_name }}"
     repository: "{{ item }}/{{ build_name }}"
+    source: local
   loop: "{{ docker_registries | flatten(levels=1) }}"
   tags:
     - push
@@ -14,6 +15,7 @@
   docker_image: 
     name: "{{ item }}/{{ build_name }}"
     push: yes
+    source: local
   loop: "{{ docker_registries | flatten(levels=1) }}"
   tags:
     - push

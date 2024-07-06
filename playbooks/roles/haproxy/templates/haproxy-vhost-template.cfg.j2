@@ -1,0 +1,53 @@
+frontend frontend-production-qalms-http
+	bind 171.18.57.240:80
+
+  maxconn 20000
+
+	reqadd X-Forwarded-Proto:\ http
+	option forwardfor
+  
+# Compression
+	compression algo gzip
+	compression type  text/plain text/css application/javascript application/x-javascript text/xml application/xml application/xml+rss text/javascript image/x-icon image/bmp
+
+	default_backend backend-frontend-production-qalms
+
+frontend frontend-production-qalms-https
+	bind 171.18.57.240:443 ssl crt /etc/haproxy/certs/chain.pem force-sslv3 force-tlsv10 force-tlsv11 force-tlsv12 
+
+  maxconn 20000
+
+	reqadd X-Forwarded-Proto:\ https
+	option forwardfor
+
+# Compression
+	compression algo gzip
+	compression type  text/plain text/css application/javascript application/x-javascript text/xml application/xml application/xml+rss text/javascript image/x-icon image/bmp
+
+# backend
+	default_backend backend-frontend-production-qalms
+
+
+backend backend-frontend-production-qalms
+#	redirect scheme https if !{ ssl_fc }
+
+# rr is wrr in fact (weight rr). For static use static_rr
+	balance roundrobin
+  
+# Check HTTP : Get belisarius status and check isHealthy
+  option httpchk GET /admin/store/health?key=doTheReIndex
+  http-check expect string "isHealthy":true
+
+# Or : check nginx page
+# option httpchk GET /health-check/status-frontend-production-qalms
+
+# Session cookie
+  cookie JSESSIONID prefix indirect nocache
+
+  server hackberry        hackberry:10381         weight 1 check inter 10s fall 3 rise 2 ssl cookie hackberry
+  server cottonwood       cottonwood:10381        weight 1 check inter 10s fall 3 rise 2 ssl cookie cottonwood
+  server magnolia         magnolia:10381          weight 1 check inter 10s fall 3 rise 2 ssl cookie magnolia
+  server lemon            lemon:10381             weight 1 check inter 10s fall 3 rise 2 ssl cookie lemon
+  server birch            birch:10381             weight 1 check inter 10s fall 3 rise 2 ssl cookie birch
+  server apricot          apricot:10381           weight 1 check inter 10s fall 3 rise 2 ssl cookie apricot
+

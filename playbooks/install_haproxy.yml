@@ -1,5 +1,5 @@
 ---
-- name: "install HAProxy - OSPF (quagga)  - VRRP (Keepalived) load balancing"
+- name: "install HAProxy - OSPF (FRRounting)  - VRRP (Keepalived) load balancing"
   hosts: lb:&{{ datacenter }} # env use intersection bewteen groups
   #become_user: root
   become: yes

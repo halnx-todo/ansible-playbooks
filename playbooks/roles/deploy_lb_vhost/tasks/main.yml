@@ -401,6 +401,7 @@
     mode: 0600
     owner: haproxy
     group: haproxy
+  when: item.0.component == component and item.0.deploy_lb_vhost
   loop: "{{ project_components | subelements('hostname') }}"
   become: yes
   tags:
@@ -473,7 +474,7 @@
     - lb_vhost
     - certificate
 
-# VRRP : Use sed because lineinfile seems to have a bug with variables and with_nested
+# VRRP : Get the lb_bind_ip configuration for this component
 - name: "Complete the vhost (for vrrp)"
   set_fact: 
     foo_item: "{{ lb_confs[ item.lb_conf_name ].lb_bind_ip }}"
@@ -485,17 +486,10 @@
     - ip
     - test
 
+# VRRP : Rebuild the list : { ip: "", instance: "" }, { ip: "", instance: "" }, ...
 - name: 'Rebuild lb_bind_ip'
   set_fact: 
-    lb_bind_ip: "{% for i in foo_results.results %}{% if i.skipped is not defined %}{{ i.ansible_facts.foo_item }}{% if not loop.last %},{% endif %}{% endif %}{% endfor %}"
-  tags:
-    - lb_vhost
-    - ip
-    - test
-
-- debug: 
-    msg: "{{ lb_bind_ip }}"
-    #msg: "{{ foo_results.results[1].ansible_facts }}"
+    lb_bind_ip: "[ {% for i in foo_results.results %}{% if i.skipped is not defined %}{% for j in i.ansible_facts.foo_item %}{{ j }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %}{% endfor %} ]"
   tags:
     - lb_vhost
     - ip
@@ -503,12 +497,12 @@
 
 - name: "add ip to vrrp configuration file"
   lineinfile:
-    path: "/etc/keepalived/ip_{{ item[1].instance }}.conf"
+    path: "/etc/keepalived/ip_{{ item.1.instance }}.conf"
     regexp: "^{{ item[1].ip }}$"
     line: "{{ item[1].ip }}"
     state: present
     insertbefore: '}'
-  when: item[0].deploy_lb_vhost and lb_bind_ip != ""
+  when: item.0.deploy_lb_vhost and item.0.component == component and lb_bind_ip != ""
   loop: "{{ project_components | product(lb_bind_ip)|list }}"
   become: yes
   become_user: root

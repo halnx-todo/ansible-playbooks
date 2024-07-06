@@ -119,6 +119,7 @@ http {
       set $type 'nginx';
       set $environment 'nginx';
       set $application 'nginx';
+      set $env 'production';
       set $last_http_x_forwarded_for "";
       if ($http_x_forwarded_for ~ "(\d+\.\d+\.\d+\.\d+)$") {
         set $last_http_x_forwarded_for $1;

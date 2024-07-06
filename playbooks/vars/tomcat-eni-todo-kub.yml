@@ -7,7 +7,7 @@ git_repo:
 dockerfile_path: Dockerfile
 target: eni-todo-tomcat-mariadb-kub
 
-build_name: "{{ component }}-{{ application }}:{{ release }}"
+build_name: "{{ component }}-{{ application }}:{{ release }}-{{ target }}"
 build_strategy: dockerfile
 build_args:
   MULTIPART_LOCATION: '/tmp'

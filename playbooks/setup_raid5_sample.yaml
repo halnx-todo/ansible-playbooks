@@ -1,0 +1,20 @@
+---
+- name: "Prerequires for nfsha servers"
+  become: yes
+  become_user: root
+  hosts: nfsha
+  # we set those operation one server at a time
+  serial: 1
+  vars_files:
+    - "vars/default.yml"
+  vars:
+    - base_dir: "/opt/data"
+  pre_tasks:
+    - shell: echo 'starting install'
+  roles:
+    - { role: prepare_nfsha_server }
+    - { role: setup_raid5_sample }
+  tasks:
+    - shell: echo 'roles done'
+  post_tasks:
+    - shell: echo 'install done'

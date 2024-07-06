@@ -1,0 +1,26 @@
+---
+# edit local /ets/hosts to set new ip to new vm
+# 
+# ssh-keygen -f "/home/ansible/.ssh/known_hosts" -R "newone"
+# ssh ansible@newone
+# ansible-playbook -i etc/hosts playbooks/install_new_vm.yml --ask-become-pass -e "vmifname=enp0s1" -e "vmip=192.168.56.70" -e "vmname=tomcat-all-in-one"
+- name: "install new machine : {{vmname}}"
+  hosts: newvm 
+  #become_user: root
+  become: yes
+  vars:
+    - vmifname: "{{ vmifname | default('eth0') }}"
+    - vmip: "{{ vmip | default ('192.168.56.66') }}"
+    - vmname: "{{ vmname | default ('eni-clone') }}"
+    - vmsearch: "diehard.net, diehard.lan"
+
+  pre_tasks:
+    - shell: echo 'starting install'
+  roles:
+    - { role: newvm }
+
+  tasks:
+    - shell: echo 'roles done'
+
+  post_tasks:
+    - shell: echo 'Install done'

@@ -1,0 +1,12 @@
+---
+- name: Include a play after another play
+  include_tasks: install-maven.yaml
+
+- name:
+  include_tasks: install-mariadb.yaml
+
+- name: install-tomcat
+  include_tasks: install-tomcat.yaml
+  
+- name: build-and-install eni-toto
+  include_tasks: build-and-deploy-eni-todo.yaml

@@ -1,0 +1,20 @@
+global { 
+  usage-count yes; 
+} 
+common { 
+  net { 
+    protocol C; 
+    max-buffers     80k; 
+    sndbuf-size     10M; 
+    rcvbuf-size     10M; 
+  } 
+  disk { 
+    resync-rate         100M; 
+    c-plan-ahead        20; 
+    c-delay-target      10; 
+    c-fill-target       1M; 
+    c-max-rate          100M; 
+    c-min-rate          250k; 
+  } 
+}
+

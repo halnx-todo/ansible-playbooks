@@ -1,0 +1,10 @@
+---
+- ansible.builtin.pause:
+    prompt: "Do you want to erase all disks {{ raid_5_disks + raid_5_disks_spare }} (yes/no) ?"
+  register: erase_disk_partition
+  delegate_to: localhost
+
+- name: Include the fdisk operation
+  include_tasks: sfdisk-on-disk.yaml
+  when: erase_disk_partition.user_input | bool
+

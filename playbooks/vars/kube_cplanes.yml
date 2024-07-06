@@ -1,0 +1,13 @@
+env: home
+ip: 192.168.56.15
+iface: enp0s2
+instance: lan
+port: 8443
+real_port: 6443
+http_check: "GET /healthz"
+http_status: 200
+ssl: yes
+backend_servers:
+  - k8s-cplane01
+  - k8s-cplane02
+  - k8s-cplane03

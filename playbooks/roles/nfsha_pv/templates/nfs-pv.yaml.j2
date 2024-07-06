@@ -5,6 +5,10 @@ metadata:
   labels:
     size: {{ pvsize }}i
     format: xfs
+{% if labels is defined %}{% for k,v in labels.items() %}
+    {{ k }}: {{ v }}
+{% endfor %}{% endif %}
+
 spec:
   capacity:
     storage: {{ pvsize }}i
@@ -15,3 +19,4 @@ spec:
     path: /{{ final_pvname }} 
     server:  {{ nfs_vip }}
   persistentVolumeReclaimPolicy: Recycle
+{% if storageclass is defined %}  storageClassName: {{ storageclass }}{% endif %}

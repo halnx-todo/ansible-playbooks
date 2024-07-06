@@ -1,0 +1,122 @@
+#
+# prepare k8s server
+#
+#
+- name : Modify the kube controller manager configuration
+  ansible.builtin.lineinfile:
+    path: /etc/kubernetes/manifests/kube-controller-manager.yaml
+    insertafter: '    - kube-controller-manager'
+    line: '    - {{ item }}'
+    state: present
+    backup: true
+  with_items:
+    - --node-monitor-grace-period=16s
+    - --node-monitor-period=2s
+  when: 
+    - inventory_hostname in groups['k8s_cplanes']
+    - tune_cluster_monitoring|default(false)|bool == true
+  tags:
+    - controller
+
+- name : Modify the kube API Server configuration
+  ansible.builtin.lineinfile:
+    path: /etc/kubernetes/manifests/kube-apiserver.yaml
+    insertafter: '    - kube-apiserver'
+    line: '    - {{ item }}'
+    state: present
+    backup: true
+  with_items:
+    - --default-not-ready-toleration-seconds=30
+    - --default-unreachable-toleration-seconds=30
+  when: 
+    - inventory_hostname in groups['k8s_cplanes']
+    - tune_cluster_monitoring|default(false)|bool == true
+  tags:
+    - controller
+
+- name: restart master kubelet
+  become: true
+  when: 
+    - inventory_hostname in groups['k8s_cplanes']
+    - tune_cluster_monitoring|default(false)|bool == true
+  ansible.builtin.systemd:
+    name: kubelet.service
+    state: restarted
+    enabled: yes
+  tags:
+    - controller
+
+- name : Modify the kubelet configuration
+  ansible.builtin.template:
+    src: kubeadm-flags.env.j2
+    dest: /var/lib/kubelet/kubeadm-flags.env
+    backup: true
+  when: 
+    - inventory_hostname in groups['k8s_workers']
+    - tune_cluster_monitoring|default(false)|bool == true
+  tags:
+    - worker
+
+- name: restart worker kubelet
+  become: true
+  when:
+    - inventory_hostname in groups['k8s_workers']
+    - tune_cluster_monitoring|default(false)|bool == true
+  ansible.builtin.systemd:
+    name: kubelet.service
+    state: restarted
+    enabled: yes
+  tags:
+    - worker
+
+- name: Replace containerd.grpc config_path
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    after: '\[plugins\."io\.containerd\.grpc\.v1\.cri"\.registry\]'
+    before: '\[plugins\."io\.containerd\.grpc\.v1\.cri"\.registry\.auths\]'
+    regexp: 'config_path = ""'
+    replace: 'config_path = "/etc/containerd/certs.d"'
+  when:
+    - inventory_hostname in groups['k8s_workers']
+    - add_unsafe_registry|default(false)|bool == true
+  tags:
+    - worker
+
+- name: "create config directory for unsafe registry"
+  ansible.builtin.file: 
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "/etc/containerd/certs.d/registry.diehard.net:5000/"
+  when:
+    - inventory_hostname in groups['k8s_workers']
+    - add_unsafe_registry|default(false)|bool == true
+  tags:
+    - worker
+
+- name : add unsafe registry definition
+  ansible.builtin.template:
+    src: hosts.toml.j2
+    dest: "/etc/containerd/certs.d/{{ item.registry_name }}:{{ item.registry_port }}/hosts.toml"
+    backup: true
+  loop:
+    - {"registry_name":"registry.diehard.net", "registry_port":"5000"}
+  when:
+    - inventory_hostname in groups['k8s_workers']
+    - add_unsafe_registry|default(false)|bool == true
+  tags:
+    - worker
+
+- name: restart worker kubelet
+  become: true
+  when:
+    - inventory_hostname in groups['k8s_workers']
+    - add_unsafe_registry|default(false)|bool == true
+  ansible.builtin.systemd:
+    name: containerd.service
+    state: restarted
+    enabled: yes
+  tags:
+    - worker
+
+

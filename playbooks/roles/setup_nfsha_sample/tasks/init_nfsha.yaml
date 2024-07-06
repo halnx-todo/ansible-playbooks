@@ -1,0 +1,171 @@
+---
+- name: Install packadge for pacemaker
+  apt:
+    pkg:
+      - net-tools 
+      - corosync 
+      - pacemaker 
+      - pacemaker-resource-agents
+      - resource-agents-extra
+      - fence-agents
+      - crmsh
+      - pcs
+      - haveged
+      - drbd-utils 
+      - nfs-kernel-server  
+      - units 
+      - lsscsi
+      - xfsprogs
+      - xfsdump
+      - rsync
+    state: latest
+    update_cache: "{{ update_cache }}"
+  tags:
+    - install
+    - nfs-ha
+
+- name: /etc/bind/named.conf.options
+  template:
+    src: multipath.conf.j2
+    dest: /etc/multipath.conf
+  tags:
+    - nfs-ha
+
+- name: hosts 
+  template:
+    src: hosts.j2
+    dest: /etc/hosts 
+  tags:
+    - nfs-ha
+
+- name: Allow tcp access from {{ nfs_ha_secondary_name }} to {{ nfs_ha_primary_name }} for nfs-ha
+  when: nfsharole=="primary"
+  ufw:
+    rule: allow
+    proto: tcp
+    src: '{{ nfs_ha_secondary_ip }}'
+    port: '{{ item }}'
+  with_items:
+    - 2224
+    - 3121
+    - 7788
+    - 21064
+  tags:
+    - firewall
+    - nfs-ha
+    
+    
+- name: Allow tcp access from {{ nfs_ha_primary_name }} to {{ nfs_ha_secondary_name }} for nfs-ha
+  when: nfsharole=="secondary"
+  ufw:
+    rule: allow
+    proto: tcp
+    src: '{{ nfs_ha_primary_ip }}'
+    port: '{{ item }}'
+  with_items:
+    - 2224
+    - 3121
+    - 7788
+    - 21064
+  tags:
+    - firewall
+    - nfs-ha
+    
+- name: Allow udp access from {{ nfs_ha_secondary_name }} to {{ nfs_ha_primary_name }} for nfs-ha
+  when: nfsharole=="primary"
+  ufw:
+    rule: allow
+    proto: tcp
+    src: '{{ nfs_ha_secondary_ip }}'
+    port: '5404:5406 '
+  tags:
+    - firewall
+    - nfs-ha
+    
+    
+- name: Allow udp access from {{ nfs_ha_primary_name }} to {{ nfs_ha_secondary_name }} for nfs-ha
+  when: nfsharole=="secondary"
+  ufw:
+    rule: allow
+    proto: tcp
+    src: '{{ nfs_ha_primary_ip }}'
+    port: '5404:5406 '
+  tags:
+    - firewall
+    - nfs-ha
+    
+- name: Allow tcp access from any to {{ nfs_ha_vip_ip }} (vip) for nfs-ha
+  ufw:
+    rule: allow
+    proto: tcp
+    src: 'any'
+    dest: '{{ nfs_ha_vip_ip }}'
+    port: '2049'
+  tags:
+    - firewall
+    - nfs-ha
+
+- name: "create /var/log/cluster "
+  ansible.builtin.file:
+    path: "/var/log/cluster"
+    state: "directory"
+    mode: u=rwX,g=rX,o=rX
+  tags:
+    - nfs-ha
+
+- name: Check that the somefile.conf exists
+  ansible.builtin.stat:
+    path: /etc/corosync/authkey
+  register: stat_result
+
+- name: " corosync-keygen "
+  become: true
+  shell: "corosync-keygen"
+  register: output
+  when: nfsharole=="primary" and not stat_result.stat.exists
+  tags:
+    - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name:  fetch of the /etc/corosync/authkey
+  become: true
+  when: nfsharole=="primary" and not stat_result.stat.exists
+  ansible.builtin.fetch:
+    src: '/etc/corosync/authkey'
+    dest: './etc/corosync/authkey'
+    check_mode : yes
+    flat: yes
+  tags:
+    - nfs-ha
+
+- name:  copy of the /etc/corosync/authkey
+  become: true
+  when: nfsharole=="secondary" and not stat_result.stat.exists
+  ansible.builtin.copy:
+    src: './etc/corosync/authkey'
+    dest: '/etc/corosync/authkey'
+    owner: root
+    group: root
+    mode: u=r,g=,o=
+  tags:
+    - nfs-ha
+
+- name: start and enable pacemaker and corosync  service
+  ignore_errors: true
+  ansible.builtin.systemd:
+    name: '{{ item }}'
+    state: restarted
+    enabled: yes
+  loop:
+    - corosync
+    - pacemaker 
+  tags:
+    - nfs-ha
+    - service
+
+
+

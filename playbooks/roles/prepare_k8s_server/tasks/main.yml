@@ -3,7 +3,7 @@
 #
 #
 - name : upgrade to latest packages
-  apt: 
+  ansible.builtin.apt: 
     update_cache: yes
     force_apt_get: yes
     cache_valid_time: 3600
@@ -11,7 +11,7 @@
     - upgrade
 
 - name: Upgrade all apt packages
-  apt:
+  ansible.builtin.apt:
     upgrade: dist
     force_apt_get: yes      
   tags:
@@ -19,14 +19,14 @@
 
 - name: Check if a reboot is needed for Debian and Ubuntu boxes
   register: reboot_required_file
-  stat: 
+  ansible.builtin.stat: 
     path: /var/run/reboot-required 
-    get_md5: no
+    get_checksum: no
   tags:
     - upgrade
 
 - name: Reboot the Debian or Ubuntu server
-  reboot:
+  ansible.builtin.reboot:
     msg: "Reboot initiated by Ansible due to kernel updates"
     connect_timeout: 5
     reboot_timeout: 300
@@ -38,13 +38,13 @@
     - upgrade
 
 - name: Configure timezone
-  timezone:
+  community.general.timezone:
     name: "{{ timezone }}"
   tags:
     - time
 
 - name: Set ntp server
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/systemd/timesyncd.conf
     regexp: "^(#|)NTP="
     line: "NTP={{ ntp }}"
@@ -53,7 +53,7 @@
     - time
 
 - name: Disable/Reenable ntp
-  shell: "timedatectl set-ntp {{ item }}"
+  ansible.builtin.shell: "timedatectl set-ntp {{ item }}"
   args:
     executable: /usr/bin/bash
   loop:
@@ -63,62 +63,77 @@
   tags:
     - time
 
-- name: Add an Apt signing key, uses whichever key is at the URL
-  apt_key:
-    url: "{{ item }}"
-    state: present
-  with_items:
-   - https://packages.cloud.google.com/apt/doc/apt-key.gpg
-   - https://download.docker.com/linux/ubuntu/gpg
+- name: Create apt keyrings directory if needed
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: 0755
+    owner: root
+    group: root
+  tags:
+    - repository
+
+- name: Download k8s repository signing key
+  ansible.builtin.get_url:
+    url: "https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key"
+    dest: /tmp/kubernetes-apt-keyring.key
+    mode: 0644
+    force: true
+  tags:
+    - repository
+
+- name: Add k8s repository signing key
+  ansible.builtin.shell: "cat /tmp/kubernetes-apt-keyring.key | gpg --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+  changed_when: false
+  tags:
+    - repository
+
+- name: Add machine architecure
+  ansible.builtin.shell: "dpkg --print-architecture"
+  register: architecture
   tags:
     - repository
 
 - name: Get current ubuntu release
-  shell: lsb_release -cs
-  args:
-    executable: /usr/bin/bash
+  ansible.builtin.shell: lsb_release -cs
   register: ubuntu_release
-
-- name: Copy kubernetes repository def in sources.list.d
-  copy:
-    src: kubernetes.list
-    dest: /etc/apt/sources.list.d
-    mode: 0644
   tags:
     - repository
 
-- name: Add docker repository
-  apt_repository:
-    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ubuntu_release.stdout }} stable"
+- name: Add k8s repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch={{ architecture.stdout }} signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /"
     state: present
-    filename: docker
-    
+    filename: kubernetes
+  tags:
+    - repository
+
 - name: Install necessary packages
-  apt:
+  ansible.builtin.apt:
     pkg:
+    - ufw
     - net-tools
     - apt-transport-https
     - curl
     - vim
     - git
     - wget
+    - iputils-ping
     - kubelet
     - kubeadm
     - kubectl
     - gnupg-agent
     - software-properties-common
     - ca-certificates
-    - docker-ce 
-    - docker-ce-cli 
-    - containerd.io
-    - kernel-nfs-server
+    - containerd
+    - nfs-kernel-server
     state: latest
     update_cache: yes
   tags:
     - packages
 
 - name: Hold k8s packages
-  dpkg_selections:
+  ansible.builtin.dpkg_selections:
     name: "{{ item }}"
     selection: hold
   with_items:
@@ -128,8 +143,39 @@
   tags:
     - packages
 
+- name: configure containerd etc directory (1/4)
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: "directory"
+  tags:
+    - containerd
+
+- name: configure containerd default configuration (2/4)
+  ansible.builtin.shell: "containerd config default>/etc/containerd/config.toml"
+  args:
+    executable: /usr/bin/bash
+  tags:
+    - containerd
+
+- name: configure containerd to use systemd cgroups (3/4)
+  ansible.builtin.lineinfile:
+    path: /etc/containerd/config.toml
+    regexp: '^(.*)SystemdCgroup'
+    line: '\1SystemdCgroup = true'
+    backrefs: yes
+  tags:
+    - containerd
+
+- name: Enable containerd (4/4)
+  ansible.builtin.systemd_service:
+    enabled: yes
+    state: restarted
+    name: containerd
+  tags:
+    - containerd
+
 - name: Get releases
-  shell: kubectl version --client && kubeadm version
+  ansible.builtin.shell: kubectl version --client && kubeadm version
   args:
     executable: /usr/bin/bash
   register: k8s_releases
@@ -139,51 +185,33 @@
     msg: "{{ k8s_releases.stdout }}"
 
 - name: Disable SWAP in realtime (1/2)
-  shell: swapoff -a
+  ansible.builtin.shell: swapoff -a
   args:
     executable: /usr/bin/bash
   tags:
     - swap
 
 - name: Disable SWAP in fstab (2/2)
-  replace:
+  ansible.builtin.replace:
     path: /etc/fstab
     regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
     replace: '# \1'
   tags:
     - swap
 
-- name: Configure docker for systemd cgroups (1/2)
-  file:
-    path: /etc/systemd/system/docker.service.d
-    state: directory
-    mode: 0755
-    owner: root
-    group: root
+- name: Load modules if not done
+  community.general.modprobe:
+    name: "{{ item }}"
+    persistent: present
+  loop:
+    - overlay
+    - br_netfilter   
   tags:
-    - docker
- 
-- name: Configure docker daemon for systemd and overlay (2/2)
-  copy:
-    src: docker_daemon.json
-    dest: /etc/docker/daemon.json
-    mode: 0644
-    owner: root
-    group: root
-  tags:
-    - docker
+    - modules
 
-- name: "reload systemd"
-  systemd:
-    name: docker
-    enabled: yes
-    state: restarted
-    daemon_reload: yes
-  tags:
-    - docker
 
 - name: Configure sysctl
-  sysctl:
+  ansible.posix.sysctl:
     name: "{{ item.name }}"
     value: "{{ item.value }}"
     state: present
@@ -197,7 +225,7 @@
     - sysctl
 
 - name: configure UFW globally
-  ufw:
+  community.general.ufw:
     state: enabled
     rule: allow
     port: ssh
@@ -206,7 +234,7 @@
     - firewall
 
 - name: Configure ufw defaults
-  ufw: 
+  community.general.ufw: 
     direction: "{{ item.direction }}" 
     policy: "{{ item.policy }}"
   loop:
@@ -217,7 +245,7 @@
     - firewall
 
 - name: Configure UFW Firewall for Masters
-  ufw: 
+  community.general.ufw: 
     rule: allow
     from_ip: 192.168.56.0/24
     port: "{{ item.port }}"
@@ -228,12 +256,12 @@
     - { port: "10250:10252", proto: "tcp" }
     - { port: "8285", proto: "udp" }
     - { port: "8472", proto: "udp" }
-  when: inventory_hostname in groups['k8s_masters']
+  when: inventory_hostname in groups['k8s_cplanes']
   tags:
     - firewall
 
 - name: Configure UFW Firewall for Workers
-  ufw: 
+  community.general.ufw: 
     rule: allow
     from_ip: 192.168.56.0/24
     port: "{{ item.port }}"
@@ -248,7 +276,7 @@
     - firewall
 
 - name: Additionnal Firewall urels for Infra workers nodes
-  ufw: 
+  community.general.ufw: 
     rule: allow
     from_ip: 192.168.56.0/24
     port: "{{ item.port }}"
@@ -261,18 +289,18 @@
     - firewall
 
 - name: "Firewall for nginx ingress controller: masters must access 8443 port"
-  ufw:
+  community.general.ufw:
     rule: allow
     from_ip:  "{{ lookup('dig', '{{ item }}') }}"
     port: "8443"
     proto: "tcp"
-  with_items: "{{ groups['k8s_masters'] }}"   
+  with_items: "{{ groups['k8s_cplanes'] }}"   
   when: inventory_hostname in groups['k8s_infra']
   tags:
     - firewall
 
 - name: Allow trafic from 10.0.0.0/8 to anywhere (services, kube)
-  ufw:
+  community.general.ufw:
     rule: allow
     from: 10.0.0.0/8
     to: any
@@ -280,8 +308,17 @@
     - firewall
  
 - name: Enable kubelet
-  systemd:
+  ansible.builtin.systemd_service:
     enabled: yes
     name: kubelet
   tags:
     - kubelet
+
+- name: disable apparmor
+  ansible.builtin.systemd_service:
+    enabled: no
+    state: stopped
+    name: apparmor
+  tags:
+    - kubelet
+    - bad-security

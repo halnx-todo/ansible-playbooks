@@ -7,6 +7,8 @@
       - bind9-doc 
       - bind9-host
       - net-tools
+      - dnsutils
+      - ufw
     state: present
 
 - name: /etc/bind/named.conf.options
@@ -47,15 +49,18 @@
   template:
     src: db.diehard.net.j2
     dest: /etc/bind/db.diehard.net
-    #owner: bin
-    #group: wheel
-    #mode: '0644'
+  when: use_vip != 'yes'
 
-- name: open ports 53 to public (to be disuss)
+- name: /etc/bind/db.diehard.net
+  template:
+    src: db.diehard.net-withvip.j2
+    dest: /etc/bind/db.diehard.net
+  when: use_vip == 'yes' 
+
+- name: open ports 53 to public (to be discuss)
   ufw:
     rule: allow
     port: "53"
-    proto: udp
   tags:
     - firewall
 

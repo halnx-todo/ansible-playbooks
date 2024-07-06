@@ -1,0 +1,208 @@
+---
+- name: "update hacluster pasword"
+  become: true
+  shell: "echo \"hacluster:{{ generated_password }}\" | chpasswd"
+  register: output
+  tags:
+    - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "update hacluster pasword"
+  become: true
+  shell: "echo \"hacluster:{{ generated_password }}\" | chpasswd"
+  register: output
+  tags:
+    - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+
+- name: "pcs host auth"
+  become: true
+  shell: "pcs host auth {{ nfs_ha_primary_name }} {{ nfs_ha_secondary_name }} -u hacluster -p {{ generated_password }}"
+  register: output
+  tags:
+    - nfs-ha
+    
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined 
+
+- name: "pcs cluster destroy on both node"
+  become: true
+  when: nfsharole=="secondary"
+  shell: "pcs cluster destroy --all --force"
+  ignore_errors: true
+  register: output
+  tags:
+    - nfs-ha
+    
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined 
+
+    #- name: "pcs cluster start --all"
+    #become: true
+    #when: nfsharole=="primary"
+    #shell: "pcs cluster start --all && pcs cluster enable --all"
+    #register: output
+    #tags:
+    #- nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: Sleep for 5 seconds and continue with play
+  ansible.builtin.wait_for:
+    timeout: 5    
+
+- name: "pcs cluster setup"
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs cluster setup {{ nfs_ha_cluster_name }} {{ nfs_ha_primary_name }} {{ nfs_ha_secondary_name }} --force"
+  register: output
+  tags:
+  - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined      
+
+- name: "pcs cluster start --all"
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs cluster start --all && pcs cluster enable --all"
+  register: output
+  tags:
+  - nfs-ha
+    
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined 
+
+- name: "pcs property set stonith-enabled=false"
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs property set stonith-enabled=false"
+  register: output
+  tags:
+    - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "pcs property set no-quorum-policy=ignore"
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs property set no-quorum-policy=ignore"
+  register: output
+  tags:
+    - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "pcs resource defaults update resource-stickiness=INFINITY"
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs resource defaults update resource-stickiness=INFINITY"
+  register: output
+  tags:
+    - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "pcs resource defaults update migration-threshold=1"
+  become: true
+  when: nfsharole=="primary"
+  shell: "pcs resource defaults update migration-threshold=1"
+  register: output
+  tags:
+    - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+    #- name: "pcs resource defaults update migration-threshold=1"
+    #become: true
+    #when: nfsharole=="primary"
+    #shell: "pcs cluster config update transport updu"
+    #register: output
+    #tags:
+    #- nfs-ha
+
+    #- name: Debug
+    #debug:
+    #msg: " {{ output.stdout }}"
+    #when: output.stdout is not undefined
+
+  
+- name: start and enable pacemaker and corosync  service
+  ansible.builtin.systemd:
+    name: '{{ item }}'
+    state: restarted
+    enabled: yes
+  loop:
+    - corosync
+    - pacemaker
+  tags:
+    - nfs-ha
+    - service
+
+- name: "pcs cluster start --all"
+  become: true
+    #seq: 1
+  when: nfsharole=="secondary"
+  shell: "pcs cluster start --all && pcs cluster enable --all"
+  register: output
+  tags:
+  - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: "pcs cluster start --all"
+  become: true
+    #seq: 1
+  when: nfsharole=="primary"
+  shell: "sleep 5 && pcs cluster start --all && pcs cluster enable --all"
+  register: output
+  tags:
+  - nfs-ha
+
+- name: Debug
+  debug:
+    msg: " {{ output.stdout }}"
+  when: output.stdout is not undefined
+
+- name: check aggregate check
+  become: true
+    #when: nfsharole=="primary"
+  shell: "pcs cluster status | grep \"2 nodes configured\""
+  register: test_aggregate
+  failed_when: '"2 nodes configured" not in test_aggregate.stdout'
+

@@ -1,0 +1,12 @@
+- name: Install packadge for install java and maven
+  apt:
+      pkg:
+        - gnupg
+        - apt-transport-https
+        - openjdk-21-jdk
+        - maven
+      state: latest
+      update_cache: "{{ update_cache }}"
+  tags:
+    - java
+    - build

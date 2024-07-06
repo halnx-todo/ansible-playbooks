@@ -12,6 +12,8 @@
     mode: 0755
     owner: "{{ deploy_user }}"
     group: "{{ deploy_group }}"
+  become: true
+  become_user: root
   tags:
     - build
 

@@ -1,0 +1,222 @@
+---
+#- name: check for tomcat service
+#  ansible.builtin.file:
+#    path: "/etc/systemd/system/tomcat.service"
+#  register: tomcat_service_file
+
+- name: Populate service facts
+  service_facts:
+
+- name: Enable Tomcat service
+  ansible.builtin.systemd:
+    name: tomcat.service
+    state: stopped
+      #when: clean == "true" and tomcat_service_file.exist
+  when: "'tomcat' in services"  
+  tags:
+    - tomcat
+
+- name: Install packadge for install adoptopenjdk-11-hotspot and authbind
+  apt:
+      pkg:
+        - openjdk-21-jdk
+        - authbind
+      state: latest
+      update_cache: "{{ update_cache }}"
+  tags:
+    - java
+    - install
+
+- name: clean
+  ansible.builtin.file:
+    path: "{{ tomcat_home }}/{{ tarname }}-{{ tomcat_version }}.tar.gz"
+    state: absent
+  when: clean is true
+  tags:
+    - tomcat
+    - install
+
+- name: check for download tomcat
+  ansible.builtin.stat:
+    path: "{{ tomcat_home }}/{{ tarname }}-{{ tomcat_version }}.tar.gz"
+  register: tomcat_tar_file
+
+- name: create tomcat directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ tomcat_home }}/{{ tarname }}-{{ tomcat_version }}"
+    - "{{ tomcat_home }}/tmp"
+  tags:
+    - tomcat
+    - install
+
+- name: dowload tomcat-tar-gz
+  ansible.builtin.get_url:
+    url: "https://dlcdn.apache.org/tomcat/tomcat-10/v{{ tomcat_version }}/bin/{{ tarname}}-{{ tomcat_version }}.tar.gz"
+    dest: "{{ tomcat_home }}/"
+    checksum: "{{ tomcat_checksum }}"
+    tmp_dest: "{{ tomcat_home }}/tmp"
+  when: tomcat_tar_file.exist is undefined
+  tags:
+    - tomcat
+    - intall
+
+
+- name: clean a symbolic link
+  ansible.builtin.file:
+    path: "{{ tomcat_home }}/tomcat"
+    state: absent
+  when: clean == "true"
+  tags:
+    - tomcat
+    - install
+
+
+- name: untar tomcat archive
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: "{{ tomcat_home }}/{{ tarname }}-{{ tomcat_version }}.tar.gz"
+    dest: "{{ tomcat_home }}"
+  tags:
+    - tomcat
+    - install
+
+- name: Create a symbolic link
+  ansible.builtin.file:
+    src: "{{ tomcat_home }}/{{ tarname }}-{{ tomcat_version }}"
+    dest: "{{ tomcat_home }}/tomcat"
+    owner: "root"
+    group: "root"
+    state: link
+  tags:
+    - tomcat
+    - install
+
+- name: add group tomcat
+  ansible.builtin.group:
+    name: tomcat
+    state: present
+  tags:
+    - tomcat
+    - install
+
+- name: add user tomcat
+  user:
+    name: tomcat
+    shell: /bin/false
+    #home: "{{ tomcat_home }}"
+    groups: tomcat
+    append: yes
+  tags:
+    - tomcat
+    - install
+
+- name: chown
+  ansible.builtin.file:
+    path: "{{ tomcat_home }}"
+    recurse: yes
+    owner: tomcat
+    group: tomcat
+  tags:
+    - tomcat
+    - install
+
+- name: "configure tomcat.service"
+  template: 
+    src: tomcat.service.j2 
+    dest: "/etc/systemd/system/tomcat.service"
+    backup: yes
+    owner: root
+    group: root
+    mode: 0640
+  tags:
+    - service
+    - tomcat
+    - install
+
+- name: Just force systemd to reread configs (2.4 and above)
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Enable Tomcat service
+  ansible.builtin.systemd:
+    name: tomcat.service
+    state: started
+    enabled: yes
+
+- name: "open firewall for http (8080) port for internet"
+  ufw: 
+    rule: allow 
+    to_port: "8080"
+    proto: tcp
+  become_user: root
+  become: yes
+  when: port80 == "false"
+  tags:
+    - tomcat
+    - firewall
+
+
+###
+- name: touche authbind
+  ansible.builtin.file:
+    path: "/etc/authbind/byport/80"
+    owner: "tomcat"
+    group: "root"
+    mode: 500
+    state: "touch"
+  when: port80 == "true"
+  tags:
+    - tomcat
+    - firewall
+
+- name: "configure startup.sh"
+  template: 
+    src: startup.80.sh.j2 
+    dest: "{{ tomcat_home }}/tomcat/bin/startup.sh"
+    backup: yes
+    owner: tomcat
+    group: tomcat
+    mode: a-rwx,u+rwx
+  when: port80 == "true"
+  tags:
+    - service
+    - tomcat
+
+- name: "server server.xml"
+  template: 
+    src: server.80.xml.j2 
+    dest: "{{ tomcat_home }}/tomcat/conf/server.xml"
+    backup: yes
+    owner: tomcat
+    group: tomcat
+    mode: a-rwx,u+rw
+  when: port80 == "true"
+  tags:
+    - service
+    - tomcat
+
+- name: "open firewall for http port for internet"
+  ufw: 
+    rule: allow 
+    to_port: "80"
+    proto: tcp
+  become_user: root
+  become: yes
+  when: port80 == "true"
+  tags:
+    - tomcat
+    - firiewall
+
+- name: Restart Tomcat service
+  ansible.builtin.systemd:
+    name: tomcat.service
+    state: restarted
+    enabled: yes
+  when: port80 == "true"
+  tags:
+    - tomcat
+    - service
+

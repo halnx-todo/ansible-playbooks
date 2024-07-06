@@ -1,0 +1,7 @@
+---
+  
+- name: build-and-run-with-docker eni-toto
+  include_tasks: build-and-run-with-docker-eni-todo.yaml
+
+- name: open local mysql
+  include_tasks: configure-local-mysql.yaml
